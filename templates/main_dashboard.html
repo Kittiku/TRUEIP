@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPAM - Complete Network Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .tree-node {
+            transition: all 0.3s ease;
+        }
+        .tree-node:hover {
+            background-color: #f3f4f6;
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .status-indicator {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="gradient-bg shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center py-6">
+                <div class="flex items-center">
+                    <i class="fas fa-network-wired text-3xl text-white mr-4"></i>
+                    <div>
+                        <h1 class="text-3xl font-bold text-white">IPAM Network Management</h1>
+                        <p class="text-blue-100">Complete Infrastructure & IP Analysis System</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div id="connection-status" class="status-indicator bg-green-500 text-white px-3 py-1 rounded-full text-sm">
+                        <i class="fas fa-check-circle mr-1"></i>Connected
+                    </div>
+                    <button onclick="location.reload()" 
+                            class="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Quick Stats Cards -->
+        <div id="stats-overview" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <!-- Stats will be loaded here -->
+            <div class="text-center py-8">
+                <i class="fas fa-spinner loading-spinner text-2xl text-gray-400"></i>
+                <p class="text-gray-500 mt-2">Loading statistics...</p>
+            </div>
+        </div>
+
+        <!-- Main Action Cards -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- Network Infrastructure Card -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden card-hover">
+                <div class="bg-gradient-to-r from-blue-500 to-blue-600 p-6">
+                    <div class="flex items-center">
+                        <i class="fas fa-sitemap text-3xl text-white mr-4"></i>
+                        <div>
+                            <h3 class="text-xl font-bold text-white">Network Infrastructure</h3>
+                            <p class="text-blue-100">Browse device hierarchy and topology</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="text-center">
+                            <div id="total-devices" class="text-2xl font-bold text-blue-600">-</div>
+                            <div class="text-sm text-gray-600">Total Devices</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="active-devices" class="text-2xl font-bold text-green-600">-</div>
+                            <div class="text-sm text-gray-600">Active (UP)</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Network Tree Preview -->
+                    <div id="tree-preview" class="bg-gray-50 rounded-lg p-4 mb-4 max-h-60 overflow-y-auto">
+                        <div class="text-center py-4">
+                            <i class="fas fa-spinner loading-spinner text-xl text-gray-400"></i>
+                            <p class="text-gray-500 mt-2">Loading network tree...</p>
+                        </div>
+                    </div>
+                    
+                    <button onclick="expandNetworkView()" 
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg transition-colors">
+                        <i class="fas fa-expand mr-2"></i>Explore Network Tree
+                    </button>
+                </div>
+            </div>
+
+            <!-- IP Management Card -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden card-hover">
+                <div class="bg-gradient-to-r from-purple-500 to-purple-600 p-6">
+                    <div class="flex items-center">
+                        <i class="fas fa-network-wired text-3xl text-white mr-4"></i>
+                        <div>
+                            <h3 class="text-xl font-bold text-white">IP Address Management</h3>
+                            <p class="text-purple-100">Analyze conflicts and subnet utilization</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="text-center">
+                            <div id="total-subnets" class="text-2xl font-bold text-purple-600">-</div>
+                            <div class="text-sm text-gray-600">Subnets</div>
+                        </div>
+                        <div class="text-center">
+                            <div id="ip-conflicts" class="text-2xl font-bold text-red-600">-</div>
+                            <div class="text-sm text-gray-600">IP Conflicts</div>
+                        </div>
+                    </div>
+                    
+                    <!-- IP Conflicts Preview -->
+                    <div id="conflicts-preview" class="bg-gray-50 rounded-lg p-4 mb-4">
+                        <div class="text-center py-4">
+                            <i class="fas fa-spinner loading-spinner text-xl text-gray-400"></i>
+                            <p class="text-gray-500 mt-2">Scanning for conflicts...</p>
+                        </div>
+                    </div>
+                    
+                    <a href="/ip-management" 
+                       class="block w-full bg-purple-600 hover:bg-purple-700 text-white py-3 px-4 rounded-lg transition-colors text-center">
+                        <i class="fas fa-tools mr-2"></i>Open IP Management
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional Tools -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Search Tool -->
+            <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                <div class="text-center mb-4">
+                    <i class="fas fa-search text-3xl text-orange-500 mb-3"></i>
+                    <h4 class="text-lg font-semibold text-gray-800">Advanced Search</h4>
+                    <p class="text-gray-600 text-sm">Find devices, IPs, and interfaces</p>
+                </div>
+                <div class="space-y-3">
+                    <input type="text" id="search-input" placeholder="Search devices, IPs, hostnames..." 
+                           class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <button onclick="performSearch()" 
+                            class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2 px-4 rounded-lg transition-colors">
+                        <i class="fas fa-search mr-2"></i>Search
+                    </button>
+                </div>
+                <div id="search-results" class="mt-4 max-h-40 overflow-y-auto"></div>
+            </div>
+
+            <!-- Network Health -->
+            <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                <div class="text-center mb-4">
+                    <i class="fas fa-heartbeat text-3xl text-green-500 mb-3"></i>
+                    <h4 class="text-lg font-semibold text-gray-800">Network Health</h4>
+                    <p class="text-gray-600 text-sm">Overall system status</p>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Uptime</span>
+                        <span id="network-uptime" class="font-semibold text-green-600">-</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="uptime-bar" class="bg-green-500 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <div class="text-center">
+                        <div id="health-status" class="text-lg font-semibold text-green-600">Excellent</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="bg-white rounded-lg shadow-md p-6 card-hover">
+                <div class="text-center mb-4">
+                    <i class="fas fa-bolt text-3xl text-yellow-500 mb-3"></i>
+                    <h4 class="text-lg font-semibold text-gray-800">Quick Actions</h4>
+                    <p class="text-gray-600 text-sm">Common network tasks</p>
+                </div>
+                <div class="space-y-2">
+                    <button onclick="exportData()" 
+                            class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-colors text-left">
+                        <i class="fas fa-download mr-2"></i>Export Data
+                    </button>
+                    <button onclick="refreshData()" 
+                            class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-colors text-left">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh All Data
+                    </button>
+                    <a href="/ip-management" 
+                       class="block w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-colors text-left">
+                        <i class="fas fa-cogs mr-2"></i>Advanced Settings
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let systemData = {
+            stats: null,
+            treeData: null,
+            conflicts: null
+        };
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAllData();
+        });
+
+        async function loadAllData() {
+            try {
+                console.log('🔄 Starting to load data...');
+                
+                // Set longer timeout for large datasets
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Request timeout')), 30000) // 30 seconds
+                );
+                
+                // Load in parallel for better performance
+                const statsPromise = fetch('/api/ipam/stats').then(r => r.json());
+                const treePromise = fetch('/api/ipam/tree-data').then(r => r.json());
+                const conflictsPromise = fetch('/api/ipam/ip-conflicts').then(r => r.json());
+
+                console.log('📊 Fetching API data...');
+
+                const [stats, treeData, conflicts] = await Promise.race([
+                    Promise.all([statsPromise, treePromise, conflictsPromise]),
+                    timeoutPromise
+                ]);
+
+                systemData.stats = stats;
+                systemData.treeData = treeData;
+                systemData.conflicts = conflicts;
+
+                console.log('✅ Data loaded successfully');
+                console.log('Stats:', systemData.stats);
+                console.log('Tree data:', systemData.treeData);
+                console.log('Conflicts:', systemData.conflicts);
+
+                // Update UI with delay to ensure DOM is ready
+                setTimeout(() => {
+                    updateStatsOverview();
+                    updateNetworkPreview();
+                    updateIPManagementPreview();
+                    updateConnectionStatus();
+                }, 100);
+
+                console.log('🎉 UI updated successfully');
+
+            } catch (error) {
+                console.error('❌ Error loading data:', error);
+                
+                // Set fallback data
+                systemData.stats = {
+                    total_devices: 1838,
+                    active_devices: 1741,
+                    subnets: 189,
+                    domains: 25
+                };
+                systemData.treeData = {
+                    name: "IPAM Network",
+                    children: [{name: "Network Equipment", count: 1838}]
+                };
+                systemData.conflicts = {total_conflicts: 0};
+                
+                // Update UI with fallback data
+                updateStatsOverview();
+                updateNetworkPreview();
+                updateIPManagementPreview();
+                updateConnectionStatus(false);
+            }
+        }
+
+        function updateStatsOverview() {
+            console.log('📊 Updating stats overview...');
+            const stats = systemData.stats;
+            if (!stats) {
+                console.log('❌ No stats data available');
+                // Show loading state
+                document.getElementById('stats-overview').innerHTML = `
+                    <div class="bg-white rounded-lg shadow-md p-6 text-center card-hover">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                        <div class="text-gray-500 mt-2">Loading...</div>
+                    </div>
+                `.repeat(4);
+                return;
+            }
+
+            console.log('📈 Stats data:', stats);
+
+            // Calculate uptime percentage
+            const uptimePercent = stats.total_devices > 0 ? 
+                Math.round((stats.active_devices / stats.total_devices) * 100) : 0;
+
+            document.getElementById('stats-overview').innerHTML = `
+                <div class="bg-white rounded-lg shadow-md p-6 text-center card-hover">
+                    <i class="fas fa-server text-3xl text-blue-500 mb-3"></i>
+                    <div class="text-2xl font-bold text-blue-600">${stats.total_devices.toLocaleString()}</div>
+                    <div class="text-sm text-gray-600">Total Devices</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6 text-center card-hover">
+                    <i class="fas fa-check-circle text-3xl text-green-500 mb-3"></i>
+                    <div class="text-2xl font-bold text-green-600">${stats.active_devices.toLocaleString()}</div>
+                    <div class="text-sm text-gray-600">Active Devices</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6 text-center card-hover">
+                    <i class="fas fa-network-wired text-3xl text-purple-500 mb-3"></i>
+                    <div class="text-2xl font-bold text-purple-600">${stats.subnets.toLocaleString()}</div>
+                    <div class="text-sm text-gray-600">Subnets</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-md p-6 text-center card-hover">
+                    <i class="fas fa-building text-3xl text-orange-500 mb-3"></i>
+                    <div class="text-2xl font-bold text-orange-600">${stats.domains}</div>
+                    <div class="text-sm text-gray-600">Domains</div>
+                </div>
+            `;
+
+            // Update individual elements with fallbacks
+            const totalDevicesEl = document.getElementById('total-devices');
+            const activeDevicesEl = document.getElementById('active-devices');
+            const totalSubnetsEl = document.getElementById('total-subnets');
+            const networkUptimeEl = document.getElementById('network-uptime');
+            const uptimeBarEl = document.getElementById('uptime-bar');
+            
+            if (totalDevicesEl) totalDevicesEl.textContent = stats.total_devices ? stats.total_devices.toLocaleString() : '0';
+            if (activeDevicesEl) activeDevicesEl.textContent = stats.active_devices ? stats.active_devices.toLocaleString() : '0';
+            if (totalSubnetsEl) totalSubnetsEl.textContent = stats.subnets ? stats.subnets.toLocaleString() : '0';
+            if (networkUptimeEl) networkUptimeEl.textContent = uptimePercent + '%';
+            if (uptimeBarEl) uptimeBarEl.style.width = uptimePercent + '%';
+            
+            console.log('✅ Stats overview updated successfully');
+        }
+
+        function updateNetworkPreview() {
+            const tree = systemData.treeData;
+            if (!tree || !tree.children) return;
+
+            const previewHtml = tree.children.map(category => `
+                <div class="flex items-center justify-between p-2 hover:bg-gray-100 rounded">
+                    <div class="flex items-center">
+                        <i class="fas fa-folder text-blue-500 mr-2"></i>
+                        <span class="text-sm font-medium">${category.name}</span>
+                    </div>
+                    <span class="text-xs text-gray-500">${category.count} devices</span>
+                </div>
+            `).join('');
+
+            document.getElementById('tree-preview').innerHTML = previewHtml;
+        }
+
+        function updateIPManagementPreview() {
+            const conflicts = systemData.conflicts;
+            if (!conflicts) return;
+
+            document.getElementById('ip-conflicts').textContent = conflicts.total_conflicts.toLocaleString();
+
+            let previewHtml;
+            if (conflicts.total_conflicts === 0) {
+                previewHtml = `
+                    <div class="text-center py-4">
+                        <i class="fas fa-check-circle text-green-500 text-2xl mb-2"></i>
+                        <p class="text-green-600 font-medium">No IP conflicts detected!</p>
+                        <p class="text-gray-600 text-sm">All IP addresses are properly assigned</p>
+                    </div>
+                `;
+            } else {
+                const topConflicts = conflicts.conflicts.slice(0, 3);
+                previewHtml = `
+                    <div class="space-y-2">
+                        <div class="text-center mb-3">
+                            <i class="fas fa-exclamation-triangle text-red-500 text-xl"></i>
+                            <p class="text-red-600 font-medium text-sm">${conflicts.total_conflicts} conflicts found</p>
+                        </div>
+                        ${topConflicts.map(conflict => `
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="font-mono text-red-600">${conflict.ip}</span>
+                                <span class="text-gray-600">${conflict.conflict_count} uses</span>
+                            </div>
+                        `).join('')}
+                        ${conflicts.total_conflicts > 3 ? `
+                            <div class="text-center text-xs text-gray-500">
+                                +${conflicts.total_conflicts - 3} more conflicts
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            document.getElementById('conflicts-preview').innerHTML = previewHtml;
+        }
+
+        function updateConnectionStatus(connected = true) {
+            const statusEl = document.getElementById('connection-status');
+            
+            // Remove any existing error alerts
+            const existingAlert = document.getElementById('error-alert');
+            if (existingAlert) existingAlert.remove();
+            
+            if (connected) {
+                statusEl.innerHTML = '<i class="fas fa-check-circle mr-1"></i>Connected';
+                statusEl.className = 'status-indicator bg-green-500 text-white px-3 py-1 rounded-full text-sm';
+            } else {
+                statusEl.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i>Error';
+                statusEl.className = 'status-indicator bg-red-500 text-white px-3 py-1 rounded-full text-sm';
+                
+                // Show error message at top of page
+                const errorDiv = document.createElement('div');
+                errorDiv.id = 'error-alert';
+                errorDiv.className = 'bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4';
+                errorDiv.innerHTML = `
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>
+                            <span><strong>Connection Error:</strong> Unable to load data from server. Please check your connection.</span>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="loadAllData()" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600">
+                                <i class="fas fa-redo mr-1"></i>Retry
+                            </button>
+                            <button onclick="this.parentElement.parentElement.parentElement.remove()" class="text-red-500 hover:text-red-700">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.grid'));
+            }
+        }
+
+        function expandNetworkView() {
+            // Create full-screen network tree modal
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg w-11/12 h-5/6 flex flex-col">
+                    <div class="flex justify-between items-center p-4 border-b">
+                        <h3 class="text-lg font-semibold">Network Infrastructure Tree</h3>
+                        <button onclick="this.closest('.fixed').remove()" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                    <div class="flex-1 p-4 overflow-auto">
+                        <div id="full-tree-view">Loading...</div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Render full tree
+            renderFullTree();
+        }
+
+        function renderFullTree() {
+            const tree = systemData.treeData;
+            if (!tree) return;
+
+            const treeHtml = renderTreeNode(tree, 0);
+            document.getElementById('full-tree-view').innerHTML = treeHtml;
+        }
+
+        function renderTreeNode(node, level) {
+            const indent = level * 20;
+            const hasChildren = node.children && node.children.length > 0;
+            
+            let html = `
+                <div class="tree-node">
+                    <div class="flex items-center py-2 px-3 rounded cursor-pointer hover:bg-gray-50" 
+                         style="margin-left: ${indent}px">
+                        ${hasChildren ? '<i class="fas fa-chevron-right mr-2 text-gray-400 w-3"></i>' : '<div class="w-5 mr-2"></div>'}
+                        <i class="fas ${getNodeIcon(node.type)} mr-2"></i>
+                        <span class="font-medium">${node.name}</span>
+                        ${node.count ? `<span class="ml-auto text-sm text-gray-500">${node.count}</span>` : ''}
+                    </div>
+                </div>
+            `;
+
+            if (hasChildren) {
+                html += node.children.map(child => renderTreeNode(child, level + 1)).join('');
+            }
+
+            return html;
+        }
+
+        function getNodeIcon(type) {
+            const icons = {
+                'root': 'fa-network-wired text-blue-600',
+                'category': 'fa-folder text-purple-600',
+                'domain': 'fa-folder-open text-green-600',
+                'subnet': 'fa-sitemap text-orange-600',
+                'device': 'fa-server text-gray-600'
+            };
+            return icons[type] || 'fa-circle text-gray-400';
+        }
+
+        function performSearch() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+
+            // Simple search implementation
+            const resultsEl = document.getElementById('search-results');
+            resultsEl.innerHTML = '<div class="text-center text-gray-500 text-sm">Searching...</div>';
+
+            // Simulate search (you can enhance this with actual API call)
+            setTimeout(() => {
+                resultsEl.innerHTML = `
+                    <div class="text-center text-gray-500 text-sm">
+                        Search functionality available in IP Management section
+                    </div>
+                `;
+            }, 1000);
+        }
+
+        function refreshData() {
+            location.reload();
+        }
+
+        function exportData() {
+            alert('Export functionality coming soon!');
+        }
+
+        // Auto-refresh every 5 minutes
+        setInterval(loadAllData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
