@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPAM - Test Dashboard</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <h1>IPAM Test Dashboard</h1>
+        
+        <!-- Top Statistics Row -->
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Total IPs</h6>
+                                <h4 id="totalIPs">Loading...</h4>
+                            </div>
+                            <i class="fas fa-network-wired fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Available</h6>
+                                <h4 id="availableIPs">Loading...</h4>
+                            </div>
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Used</h6>
+                                <h4 id="usedIPs">Loading...</h4>
+                            </div>
+                            <i class="fas fa-times-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Utilization</h6>
+                                <h4 id="utilization">Loading...</h4>
+                            </div>
+                            <i class="fas fa-chart-pie fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Network Tree Section -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-project-diagram"></i> Network Tree Structure</h6>
+                    </div>
+                    <div class="card-body">
+                        <div id="networkTree">Loading network tree...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- API Test Section -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-bug"></i> API Test</h6>
+                    </div>
+                    <div class="card-body">
+                        <button class="btn btn-primary" onclick="testAPI()">Test API</button>
+                        <div id="apiResult" class="mt-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Format numbers with commas
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        // Test API function
+        async function testAPI() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.innerHTML = '<div class="text-info">Testing APIs...</div>';
+            
+            try {
+                // Test charts-data API
+                console.log('Testing /api/charts-data');
+                const chartsResponse = await fetch('/api/charts-data');
+                console.log('Charts response status:', chartsResponse.status);
+                
+                if (!chartsResponse.ok) {
+                    throw new Error(`Charts API error: ${chartsResponse.status}`);
+                }
+                
+                const chartsData = await chartsResponse.json();
+                console.log('Charts data:', chartsData);
+                
+                // Update statistics
+                if (chartsData.total_stats) {
+                    document.getElementById('totalIPs').textContent = formatNumber(chartsData.total_stats.total_ips || 0);
+                    document.getElementById('usedIPs').textContent = formatNumber(chartsData.total_stats.used_ips || 0);
+                    document.getElementById('availableIPs').textContent = formatNumber(chartsData.total_stats.available_ips || 0);
+                    document.getElementById('utilization').textContent = (chartsData.total_stats.utilization_percent || 0) + '%';
+                }
+                
+                // Test network-tree API
+                console.log('Testing /api/network-tree');
+                const treeResponse = await fetch('/api/network-tree');
+                console.log('Tree response status:', treeResponse.status);
+                
+                if (!treeResponse.ok) {
+                    throw new Error(`Tree API error: ${treeResponse.status}`);
+                }
+                
+                const treeData = await treeResponse.json();
+                console.log('Tree data:', treeData);
+                
+                // Display tree data
+                const treeDiv = document.getElementById('networkTree');
+                treeDiv.innerHTML = `<pre>${JSON.stringify(treeData, null, 2)}</pre>`;
+                
+                resultDiv.innerHTML = '<div class="alert alert-success">APIs working correctly!</div>';
+                
+            } catch (error) {
+                console.error('API test error:', error);
+                resultDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+            }
+        }
+
+        // Auto-load on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded, testing APIs automatically...');
+            testAPI();
+        });
+    </script>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

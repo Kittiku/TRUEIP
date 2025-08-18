@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPAM - Advanced Dashboard</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            background: rgba(255,255,255,0.2);
+            transition: background 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .main-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            transition: transform 0.3s;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+        }
+
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 0.5rem;
+        }
+
+        /* Network Tree Styles */
+        .tree-container {
+            height: 600px;
+            overflow: auto;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+        }
+
+        .tree-node {
+            margin: 0.5rem 0;
+            cursor: pointer;
+        }
+
+        .tree-node-root {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #667eea;
+        }
+
+        .tree-node-type {
+            font-weight: 600;
+            color: #764ba2;
+            margin-left: 20px;
+        }
+
+        .tree-node-subnet {
+            margin-left: 40px;
+            padding: 0.3rem;
+            border-left: 3px solid #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .tree-node-subnet:hover {
+            border-left-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .subnet-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+
+        .utilization-bar {
+            width: 100px;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 10px;
+        }
+
+        .utilization-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .util-low { background: #4caf50; }
+        .util-medium { background: #ff9800; }
+        .util-high { background: #f44336; }
+
+        /* Chart Styles */
+        .chart-container {
+            height: 300px;
+            margin: 1rem 0;
+            position: relative;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .error {
+            color: #f44336;
+            background: #ffebee;
+            padding: 1rem;
+            border-radius: 5px;
+            border-left: 4px solid #f44336;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-container {
+                grid-template-columns: 1fr;
+                padding: 1rem;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌐 IPAM Advanced Dashboard</h1>
+        <p>Network Tree Structure & Real-time Analytics</p>
+        <div class="nav-links">
+            <a href="/">🏠 Home</a>
+            <a href="/ip-management">📋 IP Management</a>
+            <a href="/advanced-dashboard">📊 Dashboard</a>
+        </div>
+    </div>
+
+    <div class="container-fluid mt-3">
+        <!-- Top Statistics Row -->
+        <div class="row mb-3">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Total IPs</h6>
+                                <h4 id="totalIPs">-</h4>
+                            </div>
+                            <i class="fas fa-network-wired fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Available</h6>
+                                <h4 id="availableIPs">-</h4>
+                            </div>
+                            <i class="fas fa-check-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-danger text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Used</h6>
+                                <h4 id="usedIPs">-</h4>
+                            </div>
+                            <i class="fas fa-times-circle fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body p-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title">Utilization</h6>
+                                <h4 id="utilization">-</h4>
+                            </div>
+                            <i class="fas fa-chart-pie fa-2x"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Network Tree Section -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h6><i class="fas fa-project-diagram"></i> Network Tree Structure</h6>
+                    </div>
+                    <div class="card-body p-2">
+                        <div id="networkTree" style="max-height: 500px; overflow-y: auto; font-size: 0.85em;"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts Section -->
+            <div class="col-md-8">
+                <div class="row">
+                    <!-- Network Statistics -->
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-header p-2">
+                                <h6><i class="fas fa-chart-pie"></i> IP Status Distribution</h6>
+                            </div>
+                            <div class="card-body p-2">
+                                <canvas id="statusChart" width="300" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6 mb-3">
+                        <div class="card">
+                            <div class="card-header p-2">
+                                <h6><i class="fas fa-chart-bar"></i> Subnet Utilization</h6>
+                            </div>
+                            <div class="card-body p-2">
+                                <canvas id="subnetChart" width="300" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- VRF/VPN Analysis -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header p-2">
+                                <h6><i class="fas fa-network-wired"></i> VRF/VPN Distribution</h6>
+                            </div>
+                            <div class="card-body p-2">
+                                <canvas id="vrfChart" width="300" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header p-2">
+                                <h6><i class="fas fa-list"></i> VRF/VPN Details</h6>
+                            </div>
+                            <div class="card-body p-2">
+                                <div id="vrfDetails" style="max-height: 200px; overflow-y: auto; font-size: 0.85em;">
+                                    <div id="vrfList"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+                <canvas id="ipUsageChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Top Subnets Chart -->
+        <div class="card">
+            <h3>🔥 Top Utilized Subnets</h3>
+            <div class="chart-container">
+                <canvas id="subnetChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Network Health Monitor -->
+        <div class="card">
+            <h3>💚 Network Health</h3>
+            <div id="healthMonitor">
+                <div class="loading">Analyzing network health...</div>
+            </div>
+        </div>
+
+        <!-- VRF/VPN Analysis -->
+        <div class="card">
+            <h3>🔗 VRF/VPN Analysis</h3>
+            <div class="stats-grid">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Select VRF/VPN:</label>
+                    <select id="vrfVpnSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">Select VRF/VPN...</option>
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button onclick="analyzeVrfVpn()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-search mr-2"></i>Analyze
+                    </button>
+                </div>
+            </div>
+            <div id="vrfVpnResults" class="mt-4" style="display: none;">
+                <div class="stats-grid" id="vrfVpnStats"></div>
+                <div class="chart-container mt-4">
+                    <canvas id="vrfVpnChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let networkTreeData = null;
+        let chartsData = null;
+
+        // Format numbers with commas
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        }
+
+        // Load Network Tree
+        async function loadNetworkTree() {
+            try {
+                console.log('Loading network tree...');
+                const response = await fetch('/api/network-tree');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('Network tree data loaded:', data);
+                networkTreeData = data;
+                renderNetworkTree(data);
+            } catch (error) {
+                console.error('Error loading network tree:', error);
+                document.getElementById('networkTree').innerHTML = 
+                    '<div class="text-muted p-3">Error loading network tree</div>';
+            }
+        }
+
+        // Render Network Tree with VRF folder and expand/collapse
+        function renderNetworkTree(data) {
+            console.log('Rendering network tree with data:', data);
+            const container = document.getElementById('networkTree');
+            if (!container) {
+                console.error('Network tree container not found');
+                return;
+            }
+            container.innerHTML = '';
+
+            if (!data || !data.children) {
+                console.error('Invalid network tree data');
+                container.innerHTML = '<div class="text-muted p-3">No network data available</div>';
+                return;
+            }
+
+            // Create collapsible tree node
+            function createTreeNode(node, level = 0) {
+                const nodeDiv = document.createElement('div');
+                nodeDiv.style.marginLeft = (level * 15) + 'px';
+                
+                const hasChildren = node.children && node.children.length > 0;
+                const nodeId = `node_${Math.random().toString(36).substr(2, 9)}`;
+                
+                // Create node header with expand/collapse icon
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'tree-node d-flex align-items-center';
+                headerDiv.style.cursor = hasChildren ? 'pointer' : 'default';
+                headerDiv.style.padding = '3px 0';
+                headerDiv.style.borderRadius = '4px';
+                headerDiv.style.transition = 'background-color 0.2s';
+                
+                // Hover effect
+                headerDiv.onmouseover = () => {
+                    if (hasChildren) headerDiv.style.backgroundColor = '#f8f9fa';
+                };
+                headerDiv.onmouseout = () => {
+                    headerDiv.style.backgroundColor = 'transparent';
+                };
+                
+                // Expand/Collapse icon
+                if (hasChildren) {
+                    const icon = document.createElement('i');
+                    icon.className = 'fas fa-chevron-right me-2';
+                    icon.style.fontSize = '0.7em';
+                    icon.style.transition = 'transform 0.3s';
+                    icon.style.color = '#6c757d';
+                    icon.id = `icon_${nodeId}`;
+                    headerDiv.appendChild(icon);
+                } else {
+                    // Add spacing for alignment
+                    const spacer = document.createElement('span');
+                    spacer.style.width = '15px';
+                    spacer.style.display = 'inline-block';
+                    headerDiv.appendChild(spacer);
+                }
+                
+                // Node icon and text
+                const nodeIcon = document.createElement('i');
+                if (node.type === 'root') {
+                    nodeIcon.className = 'fas fa-globe text-primary me-2';
+                } else if (node.type === 'network_type') {
+                    nodeIcon.className = 'fas fa-folder text-info me-2';
+                } else if (node.type === 'vrf') {
+                    nodeIcon.className = 'fas fa-network-wired text-warning me-2';
+                } else {
+                    nodeIcon.className = 'fas fa-sitemap text-secondary me-2';
+                }
+                nodeIcon.style.fontSize = '0.8em';
+                headerDiv.appendChild(nodeIcon);
+                
+                const nodeText = document.createElement('span');
+                nodeText.style.fontSize = node.type === 'root' ? '0.95em' : '0.85em';
+                nodeText.style.fontWeight = node.type === 'root' || node.type === 'network_type' ? 'bold' : 'normal';
+                
+                if (node.type === 'root') {
+                    nodeText.textContent = node.name;
+                } else if (node.type === 'network_type') {
+                    const stats = node.stats;
+                    const utilization = stats.total > 0 ? ((stats.used / stats.total) * 100).toFixed(1) : 0;
+                    nodeText.innerHTML = `${node.name} <small class="text-muted">(${formatNumber(stats.total)} IPs, ${utilization}% used)</small>`;
+                } else if (node.type === 'vrf') {
+                    nodeText.innerHTML = `VRF: ${node.name} <small class="text-muted">(${formatNumber(node.ip_count)} IPs)</small>`;
+                } else {
+                    const utilClass = node.utilization > 80 ? 'text-danger' : 
+                                    node.utilization > 50 ? 'text-warning' : 'text-success';
+                    nodeText.innerHTML = `${node.name} <small class="${utilClass}">${node.utilization}% (${formatNumber(node.used)}/${formatNumber(node.size)})</small>`;
+                }
+                
+                headerDiv.appendChild(nodeText);
+                nodeDiv.appendChild(headerDiv);
+                
+                // Children container
+                if (hasChildren) {
+                    const childrenDiv = document.createElement('div');
+                    childrenDiv.id = `children_${nodeId}`;
+                    childrenDiv.style.display = node.type === 'root' ? 'block' : 'none'; // Root expanded by default
+                    
+                    node.children.forEach(child => {
+                        childrenDiv.appendChild(createTreeNode(child, level + 1));
+                    });
+                    
+                    // Add click handler for expand/collapse
+                    headerDiv.onclick = (e) => {
+                        e.stopPropagation();
+                        const childrenElement = document.getElementById(`children_${nodeId}`);
+                        const iconElement = document.getElementById(`icon_${nodeId}`);
+                        
+                        if (childrenElement.style.display === 'none') {
+                            childrenElement.style.display = 'block';
+                            if (iconElement) iconElement.style.transform = 'rotate(90deg)';
+                        } else {
+                            childrenElement.style.display = 'none';
+                            if (iconElement) iconElement.style.transform = 'rotate(0deg)';
+                        }
+                    };
+                    
+                    nodeDiv.appendChild(childrenDiv);
+                }
+                
+                return nodeDiv;
+            }
+
+            container.appendChild(createTreeNode(data));
+        }
+
+        // Load Charts Data
+        async function loadChartsData() {
+            try {
+                console.log('Loading charts data...');
+                const response = await fetch('/api/charts-data');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('Charts data loaded:', data);
+                chartsData = data;
+                updateStatistics(data.total_stats);
+                renderStatusChart(data.pie_chart);
+                renderSubnetChart(data.top_subnets);
+                await loadVrfVpnData();
+            } catch (error) {
+                console.error('Error loading charts data:', error);
+                // Show fallback data
+                updateStatistics({total_ips: 0, used_ips: 0, available_ips: 0, utilization_percent: 0});
+            }
+        }
+
+        // Update Statistics Cards
+        function updateStatistics(stats) {
+            document.getElementById('totalIPs').textContent = formatNumber(stats.total_ips || 0);
+            document.getElementById('usedIPs').textContent = formatNumber(stats.used_ips || 0);
+            document.getElementById('availableIPs').textContent = formatNumber(stats.available_ips || 0);
+            document.getElementById('utilization').textContent = (stats.utilization_percent || 0) + '%';
+        }
+
+        // Render Status Pie Chart
+        function renderStatusChart(data) {
+            const ctx = document.getElementById('statusChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: data.map(item => item.name),
+                    datasets: [{
+                        data: data.map(item => item.value),
+                        backgroundColor: data.map(item => item.color),
+                        borderWidth: 1,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 10 },
+                                padding: 10
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = formatNumber(context.parsed);
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                    return `${context.label}: ${value} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Subnet Utilization Chart
+        function renderSubnetChart(data) {
+            const ctx = document.getElementById('subnetChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(item => item.subnet.length > 15 ? item.subnet.substring(0, 12) + '...' : item.subnet),
+                    datasets: [{
+                        label: 'Utilization %',
+                        data: data.map(item => item.utilization),
+                        backgroundColor: data.map(item => 
+                            item.utilization > 80 ? '#dc3545' :
+                            item.utilization > 50 ? '#ffc107' : '#28a745'
+                        ),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                font: { size: 10 },
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                font: { size: 10 },
+                                maxRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return data[context[0].dataIndex].subnet;
+                                },
+                                label: function(context) {
+                                    return `Utilization: ${context.parsed.y}%`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45
+                            }
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const item = data[context.dataIndex];
+                                    return [
+                                        `Utilization: ${item.utilization}%`,
+                                        `Used: ${formatNumber(item.used)}/${formatNumber(item.total)}`
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render Health Monitor
+        function renderHealthMonitor(stats) {
+            const container = document.getElementById('healthMonitor');
+            const utilization = stats.utilization_percent || 0;
+            
+            let healthStatus = '';
+            let healthColor = '';
+            let recommendations = [];
+
+            if (utilization < 30) {
+                healthStatus = '💚 Excellent';
+                healthColor = '#4caf50';
+                recommendations.push('Network has plenty of available IP space');
+                recommendations.push('Consider expanding services or allocating more subnets');
+            } else if (utilization < 60) {
+                healthStatus = '💛 Good';
+                healthColor = '#ff9800';
+                recommendations.push('Network utilization is moderate');
+                recommendations.push('Monitor growth trends and plan capacity accordingly');
+            } else if (utilization < 80) {
+                healthStatus = '🟠 Warning';
+                healthColor = '#ff5722';
+                recommendations.push('Network utilization is getting high');
+                recommendations.push('Consider IP address management optimization');
+                recommendations.push('Plan for network expansion');
+            } else {
+                healthStatus = '🔴 Critical';
+                healthColor = '#f44336';
+                recommendations.push('Network utilization is critically high');
+                recommendations.push('Immediate action required');
+                recommendations.push('Implement IP address reclamation');
+                recommendations.push('Plan emergency network expansion');
+            }
+
+            container.innerHTML = `
+                <div style="background: ${healthColor}20; padding: 1rem; border-radius: 8px; border-left: 4px solid ${healthColor};">
+                    <div style="font-size: 1.2rem; font-weight: bold; color: ${healthColor}; margin-bottom: 0.5rem;">
+                        ${healthStatus}
+                    </div>
+                    <div style="margin-bottom: 1rem;">
+                        Network Utilization: ${utilization}%
+                    </div>
+                    <div style="font-weight: bold; margin-bottom: 0.5rem;">Recommendations:</div>
+                    <ul style="margin-left: 1rem;">
+                        ${recommendations.map(rec => `<li style="margin-bottom: 0.3rem;">${rec}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Load VRF/VPN list for analysis
+        async function loadVrfVpnAnalysisList() {
+            try {
+                const response = await fetch('/api/vrf-vpn-list');
+                const data = await response.json();
+                
+                const select = document.getElementById('vrfVpnSelect');
+                select.innerHTML = '<option value="">Select VRF/VPN...</option>';
+                
+                data.forEach(item => {
+                    if (item.vrf_vpn) {
+                        const option = document.createElement('option');
+                        option.value = item.vrf_vpn;
+                        option.textContent = `${item.vrf_vpn} (${formatNumber(item.ip_count)} IPs)`;
+                        select.appendChild(option);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('Error loading VRF/VPN list:', error);
+            }
+        }
+
+        // Analyze VRF/VPN
+        async function analyzeVrfVpn() {
+            const vrfVpn = document.getElementById('vrfVpnSelect').value;
+            if (!vrfVpn) {
+                alert('Please select a VRF/VPN to analyze');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/vrf-vpn-analysis?vrf_vpn=${encodeURIComponent(vrfVpn)}`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                // Show results section
+                document.getElementById('vrfVpnResults').style.display = 'block';
+                
+                // Update statistics
+                const stats = data.statistics;
+                const statsContainer = document.getElementById('vrfVpnStats');
+                statsContainer.innerHTML = `
+                    <div class="stat-box">
+                        <div class="stat-value">${formatNumber(stats.total_ips)}</div>
+                        <div class="stat-label">Total IPs</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${formatNumber(stats.used_ips)}</div>
+                        <div class="stat-label">Used IPs</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${formatNumber(stats.available_ips)}</div>
+                        <div class="stat-label">Available IPs</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value">${stats.total_subnets}</div>
+                        <div class="stat-label">Subnets</div>
+                    </div>
+                `;
+
+                // Render VRF/VPN chart
+                renderVrfVpnChart(data.subnet_breakdown);
+                
+            } catch (error) {
+                console.error('Error analyzing VRF/VPN:', error);
+                alert('Error analyzing VRF/VPN: ' + error.message);
+            }
+        }
+
+        // Render VRF/VPN subnet breakdown chart
+        function renderVrfVpnChart(subnetData) {
+            const ctx = document.getElementById('vrfVpnChart').getContext('2d');
+            
+            // Destroy existing chart if it exists
+            if (window.vrfVpnChartInstance) {
+                window.vrfVpnChartInstance.destroy();
+            }
+            
+            const labels = subnetData.map(item => item.subnet);
+            const usedData = subnetData.map(item => item.used_ips);
+            const availableData = subnetData.map(item => item.available_ips);
+            
+            window.vrfVpnChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Used IPs',
+                            data: usedData,
+                            backgroundColor: '#ff6b6b',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Available IPs',
+                            data: availableData,
+                            backgroundColor: '#66bb6a',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            stacked: true,
+                            ticks: {
+                                maxRotation: 45
+                            }
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load VRF/VPN Data
+        async function loadVrfVpnData() {
+            try {
+                console.log('Loading VRF/VPN data...');
+                const response = await fetch('/api/vrf-vpn-analysis');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('VRF/VPN data loaded:', data);
+                renderVrfChart(data);
+                displayVrfDetails(data);
+            } catch (error) {
+                console.error('Error loading VRF/VPN data:', error);
+                // Show fallback message
+                document.getElementById('vrfList').innerHTML = '<div class="text-muted">Error loading VRF/VPN data</div>';
+            }
+        }
+
+        // Render VRF/VPN Chart
+        function renderVrfChart(data) {
+            const ctx = document.getElementById('vrfChart').getContext('2d');
+            
+            // Get top 10 VRFs by IP count
+            const sortedData = data.sort((a, b) => b.ip_count - a.ip_count).slice(0, 10);
+            
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: sortedData.map(item => item.vrf_vpn.length > 15 ? item.vrf_vpn.substring(0, 12) + '...' : item.vrf_vpn),
+                    datasets: [{
+                        data: sortedData.map(item => item.ip_count),
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+                            '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384'
+                        ],
+                        borderWidth: 1,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: { size: 9 },
+                                padding: 8
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: function(context) {
+                                    return sortedData[context[0].dataIndex].vrf_vpn;
+                                },
+                                label: function(context) {
+                                    return `IPs: ${formatNumber(context.parsed)}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Display VRF Details
+        function displayVrfDetails(data) {
+            const container = document.getElementById('vrfList');
+            container.innerHTML = '';
+            
+            // Sort by IP count
+            const sortedData = data.sort((a, b) => b.ip_count - a.ip_count);
+            
+            sortedData.forEach(vrf => {
+                const vrfDiv = document.createElement('div');
+                vrfDiv.className = 'mb-2 p-2 border rounded';
+                vrfDiv.style.fontSize = '0.8em';
+                
+                vrfDiv.innerHTML = `
+                    <div class="d-flex justify-content-between">
+                        <strong>${vrf.vrf_vpn}</strong>
+                        <span class="badge bg-primary">${formatNumber(vrf.ip_count)} IPs</span>
+                    </div>
+                    <div class="text-muted">
+                        Used: ${formatNumber(vrf.used_count)} | Available: ${formatNumber(vrf.available_count)} | Reserved: ${formatNumber(vrf.reserved_count)}
+                    </div>
+                `;
+                
+                container.appendChild(vrfDiv);
+            });
+        }
+
+        // Auto-refresh data
+        function startAutoRefresh() {
+            setInterval(() => {
+                loadChartsData();
+            }, 30000); // Refresh every 30 seconds
+        }
+
+        // Initialize dashboard
+        document.addEventListener('DOMContentLoaded', function() {
+            loadNetworkTree();
+            loadChartsData();
+            startAutoRefresh();
+        });
+    </script>
+    
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
