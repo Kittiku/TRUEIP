@@ -13,18 +13,6 @@ import ipaddress
 
 app = Flask(__name__)
 
-@app.route('/advanced-dashboard')
-def advanced_dashboard():
-    """Advanced dashboard with network tree and charts"""
-    return render_template('advanced_dashboard.html')
-
-@app.route('/test-dashboard')
-def test_dashboard():
-    """Test dashboard for debugging"""
-    return render_template('test_dashboard.html')
-
-app = Flask(__name__)
-
 # Database Configuration
 DB_CONFIG = {
     'host': 'localhost',
@@ -181,13 +169,7 @@ def get_real_statistics():
                 print(f"Error processing subnet {subnet}: {e}")
                 continue
         
-        # Get assigned but available IPs from database
-        cursor.execute("SELECT COUNT(*) as count FROM ip_inventory WHERE status = 'available'")
-        assigned_available_result = cursor.fetchone()
-        assigned_available = assigned_available_result['count'] if assigned_available_result else 0
-        
-        # Adjust truly free IPs
-        truly_free = total_real_available - assigned_available
+        # Get total unique subnets
         cursor.execute("SELECT COUNT(DISTINCT subnet) as count FROM ip_inventory WHERE subnet IS NOT NULL")
         subnet_result = cursor.fetchone()
         total_subnets = subnet_result['count'] if subnet_result else 0
@@ -200,8 +182,6 @@ def get_real_statistics():
             'used_ips': total_used,
             'reserved_ips': total_reserved,
             'available_ips': total_real_available,
-            'assigned_available': assigned_available,  # IP ที่ถูก assign แต่ยัง available
-            'truly_free': truly_free,  # IP ที่ว่างจริงๆ
             'total_subnets': total_subnets,
             'utilization_percent': round((total_used / total_subnet_space * 100), 2) if total_subnet_space > 0 else 0
         }
@@ -274,11 +254,6 @@ def ip_management():
     """Main IP Management page"""
     return render_template('ip_management_clean.html')
 
-@app.route('/advanced-dashboard')
-def advanced_dashboard():
-    """Advanced Dashboard with Network Tree and Charts"""
-    return render_template('advanced_dashboard.html')
-
 @app.route('/api/ip-data')
 def api_ip_data():
     """API to get IP data"""
@@ -287,7 +262,6 @@ def api_ip_data():
         page = request.args.get('page', 1, type=int)
         search = request.args.get('search', '')
         status_filter = request.args.get('status', '')
-        vrf_vpn_filter = request.args.get('vrf_vpn', '')
         
         # Calculate offset
         offset = (page - 1) * limit
@@ -310,10 +284,6 @@ def api_ip_data():
         if status_filter:
             where_conditions.append("status = %s")
             params.append(status_filter)
-            
-        if vrf_vpn_filter:
-            where_conditions.append("vrf_vpn = %s")
-            params.append(vrf_vpn_filter)
         
         where_clause = " WHERE " + " AND ".join(where_conditions) if where_conditions else ""
         
@@ -367,331 +337,6 @@ def api_statistics():
     stats = get_real_statistics()
     print(f"📊 Stats calculated: Available IPs = {stats.get('available_ips', 'Unknown')}")
     return jsonify(stats)
-
-@app.route('/api/network-tree')
-def api_network_tree():
-    """API to get network tree structure with VRF folders"""
-    try:
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get network structure by analyzing subnets and VRFs
-        cursor.execute("""
-            SELECT 
-                subnet,
-                vrf_vpn,
-                COUNT(*) as total_ips,
-                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_ips,
-                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_ips,
-                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_ips
-            FROM ip_inventory 
-            WHERE subnet IS NOT NULL AND subnet != ''
-            GROUP BY subnet, vrf_vpn
-            ORDER BY INET_ATON(SUBSTRING_INDEX(subnet, '/', 1))
-        """)
-        
-        subnets = cursor.fetchall()
-        
-        # Build tree structure
-        tree_data = {
-            "name": "Network Infrastructure",
-            "type": "root",
-            "children": []
-        }
-        
-        # Group by network type first, then by VRF
-        network_types = {}
-        
-        for subnet_info in subnets:
-            subnet = subnet_info['subnet']
-            vrf_vpn = subnet_info['vrf_vpn'] or "Default"
-            
-            # Determine network type based on IP range
-            ip_part = subnet.split('/')[0]
-            first_octet = int(ip_part.split('.')[0])
-            
-            if first_octet == 10:
-                net_type = "Private_10.x.x.x"
-            elif first_octet == 172:
-                net_type = "Private_172.x.x.x"
-            elif first_octet == 192:
-                net_type = "Private_192.x.x.x"
-            elif first_octet in [1, 5, 6, 9]:
-                net_type = "Public_Networks"
-            else:
-                net_type = "Other_Networks"
-            
-            # Initialize network type if not exists
-            if net_type not in network_types:
-                network_types[net_type] = {
-                    "name": net_type,
-                    "type": "network_type",
-                    "children": [],
-                    "stats": {"total": 0, "used": 0, "available": 0, "reserved": 0},
-                    "vrf_groups": {}
-                }
-            
-            # Initialize VRF group if not exists
-            if vrf_vpn not in network_types[net_type]["vrf_groups"]:
-                network_types[net_type]["vrf_groups"][vrf_vpn] = {
-                    "name": vrf_vpn,
-                    "type": "vrf",
-                    "children": [],
-                    "ip_count": 0
-                }
-            
-            # Calculate subnet utilization
-            try:
-                import ipaddress
-                network = ipaddress.ip_network(subnet, strict=False)
-                if network.prefixlen >= 31:
-                    subnet_size = network.num_addresses
-                else:
-                    subnet_size = network.num_addresses - 2
-                
-                used = subnet_info['used_ips'] or 0
-                available_assigned = subnet_info['available_ips'] or 0
-                reserved = subnet_info['reserved_ips'] or 0
-                real_available = subnet_size - used - reserved
-                
-                utilization = (used / subnet_size * 100) if subnet_size > 0 else 0
-                
-                subnet_node = {
-                    "name": subnet,
-                    "type": "subnet",
-                    "size": subnet_size,
-                    "used": used,
-                    "available_assigned": available_assigned,
-                    "real_available": real_available,
-                    "reserved": reserved,
-                    "utilization": round(utilization, 2),
-                    "vrf_vpn": vrf_vpn
-                }
-                
-                # Add to VRF group
-                network_types[net_type]["vrf_groups"][vrf_vpn]["children"].append(subnet_node)
-                network_types[net_type]["vrf_groups"][vrf_vpn]["ip_count"] += subnet_info['total_ips']
-                
-                # Update network type stats
-                network_types[net_type]["stats"]["total"] += subnet_size
-                network_types[net_type]["stats"]["used"] += used
-                network_types[net_type]["stats"]["available"] += real_available
-                network_types[net_type]["stats"]["reserved"] += reserved
-                
-            except Exception as e:
-                print(f"Error processing subnet {subnet}: {e}")
-                continue
-        
-        # Build final tree structure
-        for net_type_data in network_types.values():
-            # Convert VRF groups to children
-            for vrf_data in net_type_data["vrf_groups"].values():
-                # Only add VRF node if it has children
-                if vrf_data["children"]:
-                    net_type_data["children"].append(vrf_data)
-            
-            # Remove the temporary vrf_groups key
-            del net_type_data["vrf_groups"]
-            
-            # Add network type to main tree
-            tree_data["children"].append(net_type_data)
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify(tree_data)
-        
-    except Exception as e:
-        print(f"❌ Error getting network tree: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/charts-data')
-def api_charts_data():
-    """API to get data for charts"""
-    try:
-        stats = get_real_statistics()
-        
-        # Pie chart data for IP usage
-        pie_data = [
-            {"name": "Used IPs", "value": stats.get('used_ips', 0), "color": "#ff6b6b"},
-            {"name": "Reserved IPs", "value": stats.get('reserved_ips', 0), "color": "#ffa726"},
-            {"name": "Assigned Available", "value": stats.get('assigned_available', 0), "color": "#66bb6a"},
-            {"name": "Truly Free", "value": stats.get('truly_free', 0), "color": "#42a5f5"}
-        ]
-        
-        # Get subnet utilization data
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        cursor = connection.cursor(dictionary=True)
-        
-        # Top 10 most utilized subnets
-        cursor.execute("""
-            SELECT 
-                subnet,
-                COUNT(*) as total_records,
-                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_count
-            FROM ip_inventory 
-            WHERE subnet IS NOT NULL AND subnet != ''
-            GROUP BY subnet
-            HAVING used_count > 0
-            ORDER BY used_count DESC
-            LIMIT 10
-        """)
-        
-        top_subnets = []
-        subnet_data = cursor.fetchall()
-        
-        for row in subnet_data:
-            subnet = row['subnet']
-            used_count = row['used_count'] or 0
-            
-            try:
-                import ipaddress
-                network = ipaddress.ip_network(subnet, strict=False)
-                if network.prefixlen >= 31:
-                    subnet_size = network.num_addresses
-                else:
-                    subnet_size = network.num_addresses - 2
-                
-                utilization = (used_count / subnet_size * 100) if subnet_size > 0 else 0
-                
-                top_subnets.append({
-                    "subnet": subnet,
-                    "utilization": round(utilization, 2),
-                    "used": used_count,
-                    "total": subnet_size
-                })
-            except:
-                continue
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify({
-            "pie_chart": pie_data,
-            "top_subnets": top_subnets,
-            "total_stats": stats
-        })
-        
-    except Exception as e:
-        print(f"❌ Error getting charts data: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/vrf-vpn-list')
-def api_vrf_vpn_list():
-    """API to get list of VRF/VPN"""
-    try:
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get all unique VRF/VPN values with counts
-        cursor.execute("""
-            SELECT 
-                vrf_vpn,
-                COUNT(*) as ip_count,
-                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_count,
-                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_count,
-                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_count
-            FROM ip_inventory 
-            WHERE vrf_vpn IS NOT NULL AND vrf_vpn != ''
-            GROUP BY vrf_vpn
-            ORDER BY ip_count DESC
-        """)
-        
-        vrf_vpn_list = cursor.fetchall()
-        
-        cursor.close()
-        connection.close()
-        
-        return jsonify(vrf_vpn_list)
-        
-    except Exception as e:
-        print(f"❌ Error getting VRF/VPN list: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/vrf-vpn-analysis')
-def api_vrf_vpn_analysis():
-    """API to analyze VRF/VPN usage"""
-    try:
-        vrf_vpn = request.args.get('vrf_vpn', '').strip()
-        if not vrf_vpn:
-            return jsonify({'error': 'VRF/VPN parameter is required'}), 400
-        
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        cursor = connection.cursor(dictionary=True)
-        
-        # Get IPs in this VRF/VPN
-        cursor.execute("""
-            SELECT 
-                ip_address, subnet, status, hostname, description, created_at, updated_at
-            FROM ip_inventory 
-            WHERE vrf_vpn = %s
-            ORDER BY INET_ATON(ip_address)
-        """, (vrf_vpn,))
-        
-        ips_data = cursor.fetchall()
-        
-        # Get statistics for this VRF/VPN
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_ips,
-                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_ips,
-                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_ips,
-                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_ips,
-                COUNT(DISTINCT subnet) as total_subnets
-            FROM ip_inventory 
-            WHERE vrf_vpn = %s
-        """, (vrf_vpn,))
-        
-        stats = cursor.fetchone()
-        
-        # Get subnet breakdown for this VRF/VPN
-        cursor.execute("""
-            SELECT 
-                subnet,
-                COUNT(*) as total_ips,
-                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_ips,
-                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_ips,
-                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_ips
-            FROM ip_inventory 
-            WHERE vrf_vpn = %s
-            GROUP BY subnet
-            ORDER BY used_ips DESC
-        """, (vrf_vpn,))
-        
-        subnet_breakdown = cursor.fetchall()
-        
-        cursor.close()
-        connection.close()
-        
-        # Convert datetime objects to strings
-        for row in ips_data:
-            if row['created_at']:
-                row['created_at'] = row['created_at'].isoformat()
-            if row['updated_at']:
-                row['updated_at'] = row['updated_at'].isoformat()
-        
-        return jsonify({
-            'vrf_vpn': vrf_vpn,
-            'statistics': stats,
-            'ips': ips_data,
-            'subnet_breakdown': subnet_breakdown
-        })
-        
-    except Exception as e:
-        print(f"❌ Error analyzing VRF/VPN: {e}")
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/subnet-analysis')
 def api_subnet_analysis():
