@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subnet Monitor - IPAM System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .search-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .search-container input {
+            border: none;
+            outline: none;
+            padding: 8px;
+            font-size: 16px;
+            min-width: 200px;
+        }
+
+        .cidr-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: white;
+            padding: 10px 15px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .cidr-selector label {
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .cidr-selector select {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .stats-bar {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #718096;
+            margin-top: 5px;
+        }
+
+        .subnets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .subnet-card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border-left: 5px solid;
+        }
+
+        .subnet-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        .subnet-card.green {
+            border-left-color: #48bb78;
+        }
+
+        .subnet-card.yellow {
+            border-left-color: #ed8936;
+        }
+
+        .subnet-card.red {
+            border-left-color: #f56565;
+        }
+
+        .subnet-header {
+            margin-bottom: 15px;
+        }
+
+        .subnet-name {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 5px;
+        }
+
+        .subnet-info {
+            font-size: 0.9rem;
+            color: #718096;
+        }
+
+        .usage-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .usage-item {
+            text-align: center;
+        }
+
+        .usage-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .usage-label {
+            font-size: 0.8rem;
+            color: #718096;
+            margin-top: 2px;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: #e2e8f0;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            transition: width 0.5s ease;
+            border-radius: 6px;
+        }
+
+        .progress-fill.green {
+            background: linear-gradient(90deg, #48bb78, #68d391);
+        }
+
+        .progress-fill.yellow {
+            background: linear-gradient(90deg, #ed8936, #f6ad55);
+        }
+
+        .progress-fill.red {
+            background: linear-gradient(90deg, #f56565, #fc8181);
+        }
+
+        .usage-percentage {
+            text-align: center;
+            margin-top: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2rem;
+            color: #718096;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 50px;
+            color: #718096;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 15px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .subnets-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .stats-bar {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            .usage-stats {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌐 Subnet Monitor</h1>
+            <p>Real-time subnet utilization monitoring with configurable CIDR</p>
+            
+            <div class="controls">
+                <div class="search-container">
+                    <span>🔍</span>
+                    <input type="text" id="searchInput" placeholder="Search IP, description...">
+                </div>
+                
+                <div class="cidr-selector">
+                    <label for="cidrSelect">Group by:</label>
+                    <select id="cidrSelect">
+                        <option value="24">/24 (256 addresses)</option>
+                        <option value="26">/26 (64 addresses)</option>
+                        <option value="28">/28 (16 addresses)</option>
+                        <option value="30">/30 (4 addresses)</option>
+                        <option value="25">/25 (128 addresses)</option>
+                        <option value="27">/27 (32 addresses)</option>
+                        <option value="29">/29 (8 addresses)</option>
+                        <option value="16">/16 (65,536 addresses)</option>
+                        <option value="20">/20 (4,096 addresses)</option>
+                        <option value="22">/22 (1,024 addresses)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-bar" id="statsBar" style="display: none;">
+            <div class="stat-item">
+                <div class="stat-value" id="totalSubnets">0</div>
+                <div class="stat-label">Total Subnets</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="totalUsed">0</div>
+                <div class="stat-label">Total Used IPs</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="totalFree">0</div>
+                <div class="stat-label">Total Free IPs</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="avgUtilization">0%</div>
+                <div class="stat-label">Avg Utilization</div>
+            </div>
+        </div>
+
+        <div id="loading" class="loading">
+            <p>Loading subnet data...</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="subnetsContainer" class="subnets-grid"></div>
+    </div>
+
+    <script>
+        let currentSubnets = [];
+        let currentCidr = 24;
+
+        // Load data when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSubnetData();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // CIDR selector change
+            document.getElementById('cidrSelect').addEventListener('change', function() {
+                currentCidr = parseInt(this.value);
+                loadSubnetData();
+            });
+
+            // Search functionality
+            document.getElementById('searchInput').addEventListener('input', function() {
+                filterSubnets();
+            });
+        }
+
+        async function loadSubnetData() {
+            try {
+                showLoading();
+                hideError();
+
+                const response = await fetch(`/api/subnet-monitor?cidr=${currentCidr}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load data');
+                }
+
+                currentSubnets = data.subnets;
+                updateStats(data);
+                renderSubnets(currentSubnets);
+                hideLoading();
+
+            } catch (error) {
+                console.error('Error loading subnet data:', error);
+                showError('Failed to load subnet data: ' + error.message);
+                hideLoading();
+            }
+        }
+
+        function updateStats(data) {
+            const totalUsed = data.subnets.reduce((sum, subnet) => sum + subnet.used, 0);
+            const totalFree = data.subnets.reduce((sum, subnet) => sum + subnet.free, 0);
+            const totalAddresses = totalUsed + totalFree;
+            const avgUtilization = totalAddresses > 0 ? (totalUsed / totalAddresses * 100) : 0;
+
+            document.getElementById('totalSubnets').textContent = data.total_subnets;
+            document.getElementById('totalUsed').textContent = totalUsed.toLocaleString();
+            document.getElementById('totalFree').textContent = totalFree.toLocaleString();
+            document.getElementById('avgUtilization').textContent = avgUtilization.toFixed(1) + '%';
+
+            document.getElementById('statsBar').style.display = 'flex';
+        }
+
+        function renderSubnets(subnets) {
+            const container = document.getElementById('subnetsContainer');
+            
+            if (subnets.length === 0) {
+                container.innerHTML = '<div class="no-data"><h3>No subnet data available</h3><p>Add some IP addresses to see subnet utilization</p></div>';
+                return;
+            }
+
+            container.innerHTML = subnets.map(subnet => `
+                <div class="subnet-card ${subnet.status_color}">
+                    <div class="subnet-header">
+                        <div class="subnet-name">${subnet.subnet}</div>
+                        <div class="subnet-info">${subnet.total_addresses.toLocaleString()} addresses</div>
+                    </div>
+                    
+                    <div class="usage-stats">
+                        <div class="usage-item">
+                            <div class="usage-value">${subnet.used}</div>
+                            <div class="usage-label">Used</div>
+                        </div>
+                        <div class="usage-item">
+                            <div class="usage-value">${subnet.free}</div>
+                            <div class="usage-label">Free</div>
+                        </div>
+                    </div>
+
+                    <div class="progress-bar">
+                        <div class="progress-fill ${subnet.status_color}" 
+                             style="width: ${subnet.usage_percentage}%"></div>
+                    </div>
+                    
+                    <div class="usage-percentage">
+                        ${subnet.usage_percentage}% utilized
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function filterSubnets() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            if (!searchTerm) {
+                renderSubnets(currentSubnets);
+                return;
+            }
+
+            const filteredSubnets = currentSubnets.filter(subnet => 
+                subnet.subnet.toLowerCase().includes(searchTerm) ||
+                subnet.network.toLowerCase().includes(searchTerm)
+            );
+
+            renderSubnets(filteredSubnets);
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('subnetsContainer').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('subnetsContainer').style.display = 'grid';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(loadSubnetData, 30000);
+    </script>
+</body>
+</html>

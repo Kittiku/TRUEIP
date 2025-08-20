@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPAM - Advanced IP Management System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .loading-spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status-used { color: #ef4444; background-color: #fef2f2; }
+        .status-available { color: #10b981; background-color: #f0fdf4; }
+        .status-reserved { color: #f59e0b; background-color: #fffbeb; }
+        .sidebar { width: 280px; }
+        .section { display: none; }
+        .section.active { display: block; }
+        .nav-item.active { background-color: rgba(255,255,255,0.2); }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Sidebar -->
+    <div class="sidebar gradient-bg text-white shadow-lg">
+        <div class="p-6">
+            <div class="flex items-center mb-8">
+                <i class="fas fa-network-wired text-2xl mr-3"></i>
+                <h1 class="text-xl font-bold">IPAM</h1>
+            </div>
+            
+            <nav class="space-y-2">
+                <a href="#" onclick="showSection('dashboard', this)" class="nav-item active flex items-center px-4 py-3 rounded-lg hover:bg-white hover:bg-opacity-20 transition">
+                    <i class="fas fa-tachometer-alt mr-3"></i>Dashboard
+                </a>
+                <a href="#" onclick="showSection('ip-management', this)" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-white hover:bg-opacity-20 transition">
+                    <i class="fas fa-list mr-3"></i>IP Management
+                </a>
+                <a href="#" onclick="showSection('subnet-management', this)" class="nav-item flex items-center px-4 py-3 rounded-lg hover:bg-white hover:bg-opacity-20 transition">
+                    <i class="fas fa-sitemap mr-3"></i>Subnet Management
+                </a>
+            </nav>
+            
+            <div class="mt-8">
+                <h3 class="text-sm font-semibold text-white mb-4 opacity-80">QUICK ACTIONS</h3>
+                <div class="space-y-2">
+                    <button onclick="openAssignIPModal()" class="w-full flex items-center px-4 py-2 text-sm bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                        <i class="fas fa-plus mr-2"></i>Add IP
+                    </button>
+                    <button onclick="showSection('subnet-analyzer')" class="w-full flex items-center px-4 py-2 text-sm bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                        <i class="fas fa-search mr-2"></i>Analyze Subnet
+                    </button>
+                    <button onclick="refreshData()" class="w-full flex items-center px-4 py-2 text-sm bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                        <i class="fas fa-sync mr-2"></i>Refresh Data
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-8">
+                <h3 class="text-sm font-semibold text-white mb-4 opacity-80">TOOLS</h3>
+                <div class="space-y-2">
+                    <button onclick="openBulkAssignModal()" class="w-full flex items-center px-4 py-2 text-sm bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                        <i class="fas fa-download mr-2"></i>Import from CSV
+                    </button>
+                    <button onclick="clearFilters()" class="w-full flex items-center px-4 py-2 text-sm bg-white bg-opacity-20 rounded-lg hover:bg-opacity-30 transition">
+                        <i class="fas fa-times mr-2"></i>Clear Filters
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 overflow-hidden">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900" id="page-title">Advanced IP Management</h1>
+                        <p class="text-gray-600 text-sm" id="page-subtitle">Complete IP Address & Subnet Management System</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <button onclick="window.location.href='/advanced-dashboard'" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-chart-line mr-2"></i>Dashboard
+                        </button>
+                        <button onclick="refreshData()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-sync mr-2"></i>Refresh
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Dashboard Section -->
+        <div id="dashboard-section" class="section active p-6">
+            <!-- Statistics Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white rounded-lg shadow p-6 card-hover">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-check-circle text-green-600"></i>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Available IPs</p>
+                            <p class="text-2xl font-semibold text-green-600" id="available-ips">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6 card-hover">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-times-circle text-red-600"></i>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Used IPs</p>
+                            <p class="text-2xl font-semibold text-red-600" id="used-ips">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6 card-hover">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-bookmark text-yellow-600"></i>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Reserved IPs</p>
+                            <p class="text-2xl font-semibold text-yellow-600" id="reserved-ips">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow p-6 card-hover">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                                <i class="fas fa-network-wired text-purple-600"></i>
+                            </div>
+                        </div>
+                        <div class="ml-4">
+                            <p class="text-sm font-medium text-gray-600">Total Subnets</p>
+                            <p class="text-2xl font-semibold text-purple-600" id="total-subnets">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subnet Usage Overview -->
+            <div class="bg-white rounded-lg shadow mb-6">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-lg font-semibold text-gray-900">
+                            <i class="fas fa-sitemap mr-2 text-purple-600"></i>Subnet Usage Overview
+                        </h3>
+                        <button onclick="toggleSubnetDetails()" class="text-blue-600 hover:text-blue-800">
+                            <i class="fas fa-chevron-down mr-1"></i>Show Details
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div id="subnet-overview-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="text-center py-8"><i class="fas fa-spinner loading-spinner text-2xl"></i><p class="mt-2">Loading...</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- IP Management Section -->
+        <div id="ip-management-section" class="section p-6">
+            <div class="bg-white rounded-lg shadow">
+                <div class="p-6 border-b border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold text-gray-900">IP Address Management</h3>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-sm text-gray-600" id="total-ips-display">46,174 Total IPs</span>
+                            <button onclick="openAssignIPModal()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">
+                                <i class="fas fa-plus mr-2"></i>Add IP
+                            </button>
+                            <button onclick="openBulkAssignModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                                <i class="fas fa-upload mr-2"></i>Import from CSV
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input type="text" id="subnet-filter" placeholder="Enter subnet (e.g., 172.207.0.0/16)" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                        <button onclick="analyzeSubnet()" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-search mr-2"></i>Analyze Subnet
+                        </button>
+                        <select id="status-filter" class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            <option value="">All Status</option>
+                            <option value="available">Available</option>
+                            <option value="used">Used</option>
+                            <option value="reserved">Reserved</option>
+                        </select>
+                        <input type="text" id="ip-search" placeholder="Search IP address..." class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                    </div>
+                </div>
+
+                <!-- IP Inventory Table -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subnet</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VRF/VPN</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hostname</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ip-inventory-tbody" class="bg-white divide-y divide-gray-200">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="px-6 py-3 border-t border-gray-200 bg-gray-50">
+                    <div class="flex justify-between items-center">
+                        <div class="text-sm text-gray-700">
+                            Showing <span id="page-start">1</span> to <span id="page-end">50</span> of <span id="total-records">46,174</span> results
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="changePage('prev')" class="px-3 py-1 border border-gray-300 rounded text-gray-600 hover:bg-gray-100">Previous</button>
+                            <button onclick="changePage('next')" class="px-3 py-1 border border-gray-300 rounded text-gray-600 hover:bg-gray-100">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Subnet Management Section -->
+        <div id="subnet-management-section" class="section p-6">
+            <div class="bg-white rounded-lg shadow">
+                <div class="p-6 border-b border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-900">Subnet Management</h3>
+                    <p class="text-gray-600 text-sm">Analyze and manage IP subnets by CIDR ranges</p>
+                </div>
+                <div class="p-6">
+                    <!-- CIDR Filter -->
+                    <div class="mb-6">
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="filterByCIDR('')" class="cidr-filter active px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">All</button>
+                            <button onclick="filterByCIDR('/20')" class="cidr-filter px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">/20</button>
+                            <button onclick="filterByCIDR('/24')" class="cidr-filter px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">/24</button>
+                            <button onclick="filterByCIDR('/25')" class="cidr-filter px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">/25</button>
+                            <button onclick="filterByCIDR('/30')" class="cidr-filter px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">/30</button>
+                        </div>
+                    </div>
+
+                    <!-- Subnet Grid -->
+                    <div id="subnet-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div class="text-center py-8"><i class="fas fa-spinner loading-spinner text-2xl"></i><p class="mt-2">Loading...</p></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assign IP Modal -->
+    <div id="assign-ip-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4">
+            <div class="p-6 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold text-gray-900">Assign IP Address</h3>
+                    <button onclick="closeAssignIPModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <form id="assign-ip-form" class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">IP Address</label>
+                        <input type="text" id="new-ip-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="e.g., 192.168.1.10">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Subnet</label>
+                        <input type="text" id="new-subnet" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="e.g., 192.168.1.0/24">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select id="new-status" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            <option value="used">Used</option>
+                            <option value="reserved">Reserved</option>
+                            <option value="available">Available</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">IP Type</label>
+                        <select id="new-ip-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                            <option value="private">Private</option>
+                            <option value="public">Public</option>
+                            <option value="wan">WAN Device</option>
+                            <option value="global">Global Routing</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">VRF/VPN</label>
+                        <input type="text" id="new-vrf-vpn" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="e.g., CINNAMON">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">AS Number</label>
+                        <input type="text" id="new-as-number" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="e.g., AS65001">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Hostname</label>
+                        <input type="text" id="new-hostname" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="e.g., router-01.company.com">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                        <textarea id="new-description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent" placeholder="Interface description and usage details"></textarea>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button type="button" onclick="closeAssignIPModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Assign IP</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-3"></div>
+
+    <script>
+        // Global state
+        let currentSection = 'dashboard';
+        let currentPage = 1;
+        let currentFilters = {};
+        let ipData = [];
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize dashboard section as default
+            showSection('dashboard');
+        });
+
+        // Navigation functions
+        function showSection(sectionName, triggerElement) {
+            // Hide all sections
+            document.querySelectorAll('.section').forEach(section => {
+                section.classList.remove('active');
+                section.style.display = 'none';
+            });
+            
+            // Remove active class from nav items
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Show selected section
+            const targetSection = document.getElementById(sectionName + '-section');
+            if (targetSection) {
+                targetSection.classList.add('active');
+                targetSection.style.display = 'block';
+            }
+            
+            // Add active class to clicked nav item
+            if (triggerElement) {
+                triggerElement.closest('.nav-item').classList.add('active');
+            } else {
+                // Find nav item by onclick attribute for programmatic calls
+                const navLink = document.querySelector(`[onclick="showSection('${sectionName}')"]`);
+                if (navLink) {
+                    navLink.closest('.nav-item').classList.add('active');
+                }
+            }
+            
+            currentSection = sectionName;
+            
+            // Update page title
+            const titles = {
+                'dashboard': 'Dashboard Overview',
+                'ip-management': 'IP Address Management', 
+                'subnet-management': 'Subnet Management'
+            };
+            
+            const subtitles = {
+                'dashboard': 'Real-time network statistics and monitoring',
+                'ip-management': 'Complete IP address inventory and assignment',
+                'subnet-management': 'Subnet analysis and CIDR management'
+            };
+            
+            document.getElementById('page-title').textContent = titles[sectionName] || 'IPAM System';
+            document.getElementById('page-subtitle').textContent = subtitles[sectionName] || 'IP Address Management System';
+            
+            // Load section-specific data
+            if (sectionName === 'dashboard') {
+                loadDashboardData();
+            } else if (sectionName === 'ip-management') {
+                loadIPManagement();
+            } else if (sectionName === 'subnet-management') {
+                loadSubnetManagement();
+            }
+        }
+
+        // Load dashboard data
+        async function loadDashboardData() {
+            try {
+                const response = await fetch('/api/statistics');
+                const data = await response.json();
+                
+                document.getElementById('available-ips').textContent = data.available_ips?.toLocaleString() || '0';
+                document.getElementById('used-ips').textContent = data.used_ips?.toLocaleString() || '0';
+                document.getElementById('reserved-ips').textContent = data.reserved_ips?.toLocaleString() || '0';
+                document.getElementById('total-subnets').textContent = data.total_subnets?.toLocaleString() || '0';
+                
+                // Add utilization info
+                if (data.total_possible_ips) {
+                    const utilizationText = document.createElement('div');
+                    utilizationText.className = 'text-xs text-gray-500 mt-1';
+                    utilizationText.textContent = `${data.utilization_percentage}% utilized (${data.total_possible_ips.toLocaleString()} total possible)`;
+                    
+                    const availableCard = document.getElementById('available-ips').parentElement.parentElement;
+                    if (!availableCard.querySelector('.text-xs')) {
+                        availableCard.appendChild(utilizationText);
+                    }
+                }
+                
+                loadSubnetOverview();
+            } catch (error) {
+                console.error('Error loading dashboard data:', error);
+                showToast('Failed to load dashboard data', 'error');
+            }
+        }
+
+        // Load subnet management data
+        async function loadSubnetManagement() {
+            try {
+                const response = await fetch('/api/subnets-overview');
+                const data = await response.json();
+                
+                const container = document.getElementById('subnet-grid');
+                
+                if (!data.subnets || data.subnets.length === 0) {
+                    container.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No subnet data available</div>';
+                    return;
+                }
+                
+                container.innerHTML = data.subnets.map(subnet => `
+                    <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer" onclick="analyzeSpecificSubnet('${subnet.subnet}')">
+                        <div class="flex justify-between items-start mb-4">
+                            <h4 class="font-mono text-lg font-semibold text-gray-900">${subnet.subnet}</h4>
+                            <span class="text-sm px-3 py-1 bg-${subnet.ip_type === 'private' ? 'blue' : 'green'}-100 text-${subnet.ip_type === 'private' ? 'blue' : 'green'}-800 rounded-full">
+                                ${subnet.ip_type}
+                            </span>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">Total IPs:</span>
+                                <span class="font-semibold">${subnet.total_ips}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">Used:</span>
+                                <span class="font-semibold text-red-600">${subnet.used_ips}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">Available:</span>
+                                <span class="font-semibold text-green-600">${subnet.available_ips}</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-600">Reserved:</span>
+                                <span class="font-semibold text-yellow-600">${subnet.reserved_ips}</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-blue-600 h-2 rounded-full" style="width: ${subnet.utilization}%"></div>
+                            </div>
+                            <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                <span>Utilization</span>
+                                <span>${subnet.utilization}%</span>
+                            </div>
+                        </div>
+                        
+                        ${subnet.vrfs ? `
+                            <div class="mt-3 pt-3 border-t border-gray-200">
+                                <div class="text-xs text-gray-500 mb-1">VRF/VPN:</div>
+                                <div class="text-xs text-purple-600 truncate">${subnet.vrfs}</div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading subnet management:', error);
+                showToast('Failed to load subnet data', 'error');
+            }
+        }
+
+        // Load IP management section
+        async function loadIPManagement() {
+            try {
+                loadIPData(currentPage);
+            } catch (error) {
+                console.error('Error loading IP management:', error);
+                showToast('Failed to load IP management data', 'error');
+            }
+        }
+
+        // Load subnet overview
+        async function loadSubnetOverview() {
+            try {
+                const response = await fetch('/api/subnets-overview');
+                const data = await response.json();
+                
+                const container = document.getElementById('subnet-overview-grid');
+                
+                if (!data.subnets || data.subnets.length === 0) {
+                    container.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No subnet data available</div>';
+                    return;
+                }
+                
+                container.innerHTML = data.subnets.slice(0, 8).map(subnet => `
+                    <div class="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition cursor-pointer" onclick="filterBySubnet('${subnet.subnet}')">
+                        <div class="flex justify-between items-start mb-2">
+                            <h4 class="font-mono text-sm font-semibold text-gray-900">${subnet.subnet}</h4>
+                            <span class="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">${subnet.ip_type}</span>
+                        </div>
+                        <p class="text-xs text-gray-600 mb-3">Used: ${subnet.used_ips}/${subnet.total_ips}</p>
+                        <div class="w-full bg-gray-200 rounded-full h-1.5">
+                            <div class="bg-blue-600 h-1.5 rounded-full" style="width: ${subnet.utilization}%"></div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>Available: ${subnet.available_ips}</span>
+                            <span>${subnet.utilization}%</span>
+                        </div>
+                        ${subnet.vrfs ? `<div class="text-xs text-purple-600 mt-1 truncate">VRF: ${subnet.vrfs.split(',')[0]}${subnet.vrfs.split(',').length > 1 ? '...' : ''}</div>` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading subnet overview:', error);
+            }
+        }
+
+        // Load IP data for management table
+        async function loadIPData(page = 1) {
+            try {
+                const params = new URLSearchParams({
+                    page: page,
+                    limit: 50,
+                    ...currentFilters
+                });
+                
+                const response = await fetch(`/api/ip-data?${params}`);
+                const data = await response.json();
+                
+                ipData = data.data || [];
+                updateIPTable();
+                updatePagination(data);
+                
+            } catch (error) {
+                console.error('Error loading IP data:', error);
+                showToast('Failed to load IP data', 'error');
+            }
+        }
+
+        // Update IP table
+        function updateIPTable() {
+            const tbody = document.getElementById('ip-inventory-tbody');
+            
+            if (!ipData || ipData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-500">No IP data available</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = ipData.map(ip => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">${ip.ip_address}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="px-2 py-1 text-xs font-semibold rounded-full status-${ip.status}">
+                            ${ip.status}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">${ip.subnet || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${ip.vrf_vpn || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${ip.hostname || '-'}</td>
+                    <td class="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">${ip.description || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button onclick="editIP(${ip.id})" class="text-blue-600 hover:text-blue-900 mr-3">Edit</button>
+                        <button onclick="deleteIP(${ip.id})" class="text-red-600 hover:text-red-900">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // Modal functions
+        function openAssignIPModal() {
+            document.getElementById('assign-ip-modal').classList.remove('hidden');
+            document.getElementById('assign-ip-modal').classList.add('flex');
+        }
+
+        function closeAssignIPModal() {
+            document.getElementById('assign-ip-modal').classList.add('hidden');
+            document.getElementById('assign-ip-modal').classList.remove('flex');
+            document.getElementById('assign-ip-form').reset();
+        }
+
+        // Form submission
+        document.getElementById('assign-ip-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = {
+                ip_address: document.getElementById('new-ip-address').value,
+                subnet: document.getElementById('new-subnet').value,
+                status: document.getElementById('new-status').value,
+                vrf_vpn: document.getElementById('new-vrf-vpn').value,
+                hostname: document.getElementById('new-hostname').value,
+                description: document.getElementById('new-description').value,
+                ip_type: document.getElementById('new-ip-type').value,
+                as_number: document.getElementById('new-as-number').value
+            };
+            
+            try {
+                const response = await fetch('/api/add-ip', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showToast('IP assigned successfully', 'success');
+                    closeAssignIPModal();
+                    loadIPData(currentPage);
+                    loadDashboardData();
+                } else {
+                    showToast(result.error || 'Failed to assign IP', 'error');
+                }
+            } catch (error) {
+                console.error('Error assigning IP:', error);
+                showToast('Failed to assign IP', 'error');
+            }
+        });
+
+        // Utility functions
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+            
+            toast.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg flex items-center space-x-2`;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check' : type === 'error' ? 'exclamation-triangle' : 'info-circle'}"></i>
+                <span>${message}</span>
+            `;
+            
+            document.getElementById('toast-container').appendChild(toast);
+            
+            setTimeout(() => toast.remove(), 5000);
+        }
+
+        function refreshData() {
+            loadDashboardData();
+            loadIPData(currentPage);
+            showToast('Data refreshed successfully', 'success');
+        }
+
+        // Additional placeholder functions
+        function analyzeSubnet() { showToast('Subnet analysis feature coming soon', 'info'); }
+        function openBulkAssignModal() { showToast('Bulk import feature coming soon', 'info'); }
+        function filterByCIDR(cidr) { showToast(`Filtering by ${cidr || 'All'} CIDRs`, 'info'); }
+        function changePage(direction) { showToast('Pagination feature coming soon', 'info'); }
+        function editIP(id) { showToast('Edit IP feature coming soon', 'info'); }
+        function deleteIP(id) { showToast('Delete IP feature coming soon', 'info'); }
+    </script>
+</body>
+</html>
