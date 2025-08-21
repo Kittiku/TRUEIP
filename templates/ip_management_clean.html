@@ -2135,6 +2135,7 @@
 
         // Enhanced fast subnet detail function
         async function openFastSubnetDetail(subnet) {
+            console.log('🔍 Opening subnet detail for:', subnet);
             try {
                 // Show loading modal with correct IDs
                 const modal = document.getElementById('subnet-detail-modal');
@@ -2142,8 +2143,10 @@
                 const modalInfo = document.getElementById('modal-subnet-info');
                 const modalIpList = document.getElementById('modal-ip-list');
                 
+                console.log('🔍 Modal elements:', {modal: !!modal, modalTitle: !!modalTitle, modalInfo: !!modalInfo, modalIpList: !!modalIpList});
+                
                 if (!modal || !modalTitle || !modalIpList) {
-                    console.error('Modal elements not found:', {modal, modalTitle, modalIpList});
+                    console.error('❌ Modal elements not found:', {modal, modalTitle, modalIpList});
                     showToast('Modal elements not found', 'error');
                     return;
                 }
@@ -2161,60 +2164,107 @@
                 // Store current subnet for reference
                 currentSubnetData = { subnet: subnet };
                 
+                console.log('🌐 Fetching data from API for subnet:', subnet);
+                
                 // Fetch detailed data using fast API
-                const response = await fetch(`/api/fast-subnet-ips?subnet=${encodeURIComponent(subnet)}&page=1&per_page=50`);
+                const apiUrl = `/api/fast-subnet-ips?subnet=${encodeURIComponent(subnet)}&page=1&per_page=50`;
+                console.log('🌐 API URL:', apiUrl);
+                
+                const response = await fetch(apiUrl);
+                console.log('📡 Response status:', response.status);
+                console.log('📡 Response ok:', response.ok);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('📊 API Response data:', data);
                 
                 if (data.error) {
+                    console.error('❌ API returned error:', data.error);
                     modalIpList.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">${data.error}</p></td></tr>`;
                     return;
                 }
                 
+                console.log('✅ Updating modal statistics');
                 // Update sidebar statistics
                 updateModalStatistics(data);
                 
+                console.log('✅ Rendering IP list');
                 // Render IP list with proper table structure
                 renderModalIPList(data, subnet);
                 
+                console.log('🎉 Subnet detail modal loaded successfully');
+                
             } catch (error) {
-                console.error('Error opening subnet detail:', error);
-                showToast('Failed to load subnet details', 'error');
+                console.error('❌ Error opening subnet detail:', error);
+                
+                // Show detailed error information
+                let errorMsg = `Failed to load subnet details: ${error.message}`;
+                if (error.stack) {
+                    console.error('❌ Error stack:', error.stack);
+                }
+                
+                showToast(errorMsg, 'error');
                 
                 // Show error in modal if it's open
                 const modalIpList = document.getElementById('modal-ip-list');
                 if (modalIpList) {
-                    modalIpList.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">Failed to load data</p></td></tr>';
+                    modalIpList.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">Error: ${error.message}</p><p class="text-xs mt-1">Check console (F12) for details</p></td></tr>`;
                 }
             }
         }
 
         // Update modal sidebar statistics
         function updateModalStatistics(data) {
+            console.log('📊 Updating modal statistics with data:', data);
+            const stats = data.stats || {};
+            console.log('📊 Stats object:', stats);
+            
             // Update statistics in sidebar
-            document.getElementById('modal-total-ips').textContent = data.total_ips || '0';
-            document.getElementById('modal-network-info').textContent = `Network: ${data.subnet || 'N/A'}`;
-            document.getElementById('modal-used-ips').textContent = data.used_count || '0';
-            document.getElementById('modal-used-percent').textContent = `${((data.used_count / data.total_ips) * 100).toFixed(1)}%`;
-            document.getElementById('modal-available-ips').textContent = data.available_count || '0';
-            document.getElementById('modal-available-percent').textContent = `${((data.available_count / data.total_ips) * 100).toFixed(1)}%`;
-            document.getElementById('modal-reserved-ips').textContent = '0'; // Reserved not implemented yet
-            document.getElementById('modal-reserved-percent').textContent = '0%';
-            document.getElementById('modal-utilization').textContent = `${data.utilization?.toFixed(1) || 0}%`;
-            document.getElementById('modal-utilization-bar').style.width = `${data.utilization || 0}%`;
+            document.getElementById('modal-total-ips').textContent = stats.total_ips || '0';
+            document.getElementById('modal-network-info').textContent = `Network: ${currentSubnetData?.subnet || 'N/A'}`;
+            document.getElementById('modal-used-ips').textContent = stats.used_ips || '0';
+            document.getElementById('modal-used-percent').textContent = `${((stats.used_ips / stats.total_ips) * 100).toFixed(1)}%`;
+            document.getElementById('modal-available-ips').textContent = stats.available_ips || '0';
+            document.getElementById('modal-available-percent').textContent = `${((stats.available_ips / stats.total_ips) * 100).toFixed(1)}%`;
+            document.getElementById('modal-reserved-ips').textContent = stats.reserved_ips || '0';
+            document.getElementById('modal-reserved-percent').textContent = `${((stats.reserved_ips / stats.total_ips) * 100).toFixed(1)}%`;
+            document.getElementById('modal-utilization').textContent = `${stats.utilization?.toFixed(1) || 0}%`;
+            document.getElementById('modal-utilization-bar').style.width = `${stats.utilization || 0}%`;
+            
+            console.log('✅ Modal statistics updated successfully');
         }
 
         // Render IP list in modal table format
         function renderModalIPList(data, subnet) {
+            console.log('📋 Rendering modal IP list with data:', data);
             const modalIpList = document.getElementById('modal-ip-list');
+            const pagination = data.pagination || {};
+            
+            console.log('📋 Modal IP list element:', modalIpList);
+            console.log('📋 IP data count:', data.ips?.length || 0);
+            console.log('📋 Pagination info:', pagination);
             
             if (!data.ips || data.ips.length === 0) {
+                console.log('⚠️ No IP data found');
                 modalIpList.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500">No IP addresses found</td></tr>';
                 return;
             }
             
-            modalIpList.innerHTML = data.ips.map(ip => {
-                const statusClass = ip.status === 'Available' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
-                const actionButton = ip.status === 'Available' ? 
+            console.log('🔄 Processing IP list...');
+            const ipRows = data.ips.map((ip, index) => {
+                console.log(`📍 Processing IP ${index + 1}:`, ip);
+                
+                // Improved status detection
+                const isAvailable = ip.status === 'available' || (!ip.hostname || ip.hostname.trim() === '');
+                const statusClass = isAvailable ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                const statusText = isAvailable ? 'Available' : 'Used';
+                
+                console.log(`📍 IP ${ip.ip_address}: status=${ip.status}, hostname='${ip.hostname}', isAvailable=${isAvailable}`);
+                
+                const actionButton = isAvailable ? 
                     `<button onclick="reserveIP('${ip.ip_address}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium">Reserve</button>` :
                     `<button onclick="releaseIP('${ip.ip_address}')" class="text-red-600 hover:text-red-800 text-sm font-medium">Release</button>`;
                 
@@ -2223,7 +2273,7 @@
                         <td class="px-4 py-3 font-mono text-sm">${ip.ip_address}</td>
                         <td class="px-4 py-3">
                             <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
-                                ${ip.status}
+                                ${statusText}
                             </span>
                         </td>
                         <td class="px-4 py-3 text-sm">${ip.hostname || '-'}</td>
@@ -2234,20 +2284,24 @@
                         </td>
                     </tr>
                 `;
-            }).join('');
+            });
+            
+            console.log('✅ Generated', ipRows.length, 'IP rows');
+            modalIpList.innerHTML = ipRows.join('');
             
             // Add pagination if needed
-            if (data.total_pages > 1) {
+            if (pagination.total_pages && pagination.total_pages > 1) {
+                console.log('📖 Adding pagination row');
                 const paginationRow = `
                     <tr class="bg-gray-50">
                         <td colspan="6" class="px-4 py-3">
                             <div class="flex justify-between items-center">
                                 <div class="text-sm text-gray-500">
-                                    Page ${data.current_page} of ${data.total_pages} (${data.total_ips} total IPs)
+                                    Page ${pagination.current_page} of ${pagination.total_pages} (${pagination.total_items} total IPs)
                                 </div>
                                 <div class="flex space-x-2">
-                                    ${data.current_page > 1 ? `<button onclick="loadModalPage('${subnet}', ${data.current_page - 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Previous</button>` : ''}
-                                    ${data.current_page < data.total_pages ? `<button onclick="loadModalPage('${subnet}', ${data.current_page + 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Next</button>` : ''}
+                                    ${pagination.has_prev ? `<button onclick="loadModalPage('${subnet}', ${pagination.current_page - 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Previous</button>` : ''}
+                                    ${pagination.has_next ? `<button onclick="loadModalPage('${subnet}', ${pagination.current_page + 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Next</button>` : ''}
                                 </div>
                             </div>
                         </td>
@@ -2255,6 +2309,8 @@
                 `;
                 modalIpList.innerHTML += paginationRow;
             }
+            
+            console.log('🎉 Modal IP list rendered successfully');
         }
 
         // Load specific page in modal
@@ -2745,7 +2801,10 @@
                 populateVRFFilter(data.ip_list);
                 
                 // Render IP list
-                renderModalIPList(data.ip_list);
+                // Use new function format
+                if (data.ip_list && data.ip_list.length > 0) {
+                    renderModalIPList({ips: data.ip_list, pagination: {}}, currentSubnetData.subnet);
+                }
                 
                 // Show modal
                 document.getElementById('subnet-detail-modal').classList.remove('hidden');
@@ -2786,7 +2845,7 @@
                 vrfs.map(vrf => `<option value="${vrf}">${vrf}</option>`).join('');
         }
 
-        function renderModalIPList(ipList) {
+        function renderModalIPListOld(ipList) {
             const tbody = document.getElementById('modal-ip-list');
             
             if (!ipList || ipList.length === 0) {
@@ -2862,7 +2921,10 @@
                 filteredIPs = filteredIPs.filter(ip => ip.vrf_vpn === vrfFilter);
             }
             
-            renderModalIPList(filteredIPs);
+            // Use the new renderModalIPList function format
+            if (filteredIPs && filteredIPs.length > 0) {
+                renderModalIPList({ips: filteredIPs, pagination: {}}, currentSubnetData.subnet);
+            }
         }
 
         // Add Subnet Modal Functions

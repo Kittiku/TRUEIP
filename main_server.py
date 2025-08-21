@@ -304,6 +304,11 @@ def ip_management():
     """Advanced IP Management page"""
     return render_template('ip_management_clean.html')
 
+@app.route('/ip-management-clean')
+def ip_management_clean():
+    """Clean IP Management page"""
+    return render_template('ip_management_clean.html')
+
 @app.route('/ip-management-advanced')
 def ip_management_advanced():
     """Advanced IP Management page with full features"""
@@ -2277,10 +2282,14 @@ def api_fast_subnets():
         print(f"❌ Error in fast subnets API: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/fast-subnet-ips/<path:subnet_name>')
-def api_fast_subnet_ips(subnet_name):
+@app.route('/api/fast-subnet-ips')
+def api_fast_subnet_ips():
     """Fast API for subnet IPs with pagination"""
     try:
+        subnet_name = request.args.get('subnet')
+        if not subnet_name:
+            return jsonify({'error': 'Subnet parameter is required'}), 400
+            
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 50, type=int)
         
