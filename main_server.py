@@ -2884,6 +2884,244 @@ def get_import_history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/add-ip', methods=['POST'])
+def add_single_ip():
+    """Add a single IP address"""
+    try:
+        ip_address = request.form.get('ip_address', '').strip()
+        hostname = request.form.get('hostname', '').strip()
+        vrf_vpn = request.form.get('vrf_vpn', '').strip()
+        description = request.form.get('description', '').strip()
+        
+        if not ip_address:
+            return jsonify({'error': 'IP address is required'}), 400
+        
+        # Validate IP address
+        try:
+            ipaddress.ip_address(ip_address)
+        except ValueError:
+            return jsonify({'error': 'Invalid IP address format'}), 400
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor()
+        
+        # Check if IP already exists
+        cursor.execute("SELECT ip_address FROM ip_inventory WHERE ip_address = %s", (ip_address,))
+        if cursor.fetchone():
+            cursor.close()
+            connection.close()
+            return jsonify({'error': 'IP address already exists'}), 400
+        
+        # Determine status based on hostname
+        status = 'used' if hostname else 'available'
+        
+        # Auto-detect subnet if not provided
+        subnet = ''
+        if not vrf_vpn:
+            # Try to find matching subnet
+            cursor.execute("""
+                SELECT DISTINCT subnet 
+                FROM ip_inventory 
+                WHERE subnet IS NOT NULL AND subnet != ''
+            """)
+            subnets = cursor.fetchall()
+            
+            for subnet_row in subnets:
+                try:
+                    network = ipaddress.ip_network(subnet_row['subnet'], strict=False)
+                    if ipaddress.ip_address(ip_address) in network:
+                        subnet = subnet_row['subnet']
+                        break
+                except:
+                    continue
+        
+        # Insert new IP
+        insert_query = """
+            INSERT INTO ip_inventory 
+            (ip_address, subnet, status, vrf_vpn, hostname, description)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        
+        values = (ip_address, subnet, status, vrf_vpn, hostname, description)
+        cursor.execute(insert_query, values)
+        connection.commit()
+        
+        new_id = cursor.lastrowid
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True, 
+            'id': new_id, 
+            'message': 'IP added successfully',
+            'ip_address': ip_address,
+            'status': status
+        })
+        
+    except Exception as e:
+        print(f"❌ Error adding single IP: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/ip-details/<status>')
+def api_ip_details(status):
+    """API to get accurate IP details based on real calculation"""
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        if status == 'available':
+            # Get all subnets and calculate available IPs
+            cursor.execute("""
+                SELECT DISTINCT subnet 
+                FROM ip_inventory 
+                WHERE subnet IS NOT NULL AND subnet != ''
+                ORDER BY INET_ATON(SUBSTRING_INDEX(subnet, '/', 1))
+            """)
+            subnets = cursor.fetchall()
+            
+            available_ips = []
+            total_checked = 0
+            
+            for subnet_row in subnets:
+                if total_checked >= limit:
+                    break
+                    
+                subnet = subnet_row['subnet']
+                try:
+                    network = ipaddress.IPv4Network(subnet, strict=False)
+                    
+                    # Get used IPs in this subnet
+                    cursor.execute("""
+                        SELECT ip_address 
+                        FROM ip_inventory 
+                        WHERE subnet = %s AND (hostname IS NOT NULL AND hostname != '')
+                    """, (subnet,))
+                    used_ips = set(row['ip_address'] for row in cursor.fetchall())
+                    
+                    # Get reserved IPs in this subnet
+                    cursor.execute("""
+                        SELECT ip_address 
+                        FROM ip_inventory 
+                        WHERE subnet = %s AND (hostname IS NULL OR hostname = '') 
+                        AND description LIKE '%reserved%'
+                    """, (subnet,))
+                    reserved_ips = set(row['ip_address'] for row in cursor.fetchall())
+                    
+                    # Find available IPs
+                    for ip in network.hosts() if network.prefixlen < 31 else network:
+                        if total_checked >= limit:
+                            break
+                            
+                        ip_str = str(ip)
+                        if ip_str not in used_ips and ip_str not in reserved_ips:
+                            available_ips.append({
+                                'ip_address': ip_str,
+                                'subnet': subnet,
+                                'hostname': '-',
+                                'vrf_vpn': '',
+                                'description': 'Available for allocation'
+                            })
+                            total_checked += 1
+                            
+                except Exception as e:
+                    print(f"Error processing subnet {subnet}: {e}")
+                    continue
+            
+            return jsonify({
+                'data': available_ips,
+                'total': len(available_ips),
+                'status': 'available'
+            })
+            
+        elif status == 'used':
+            # Get actually used IPs (with hostname)
+            cursor.execute("""
+                SELECT ip_address, subnet, hostname, vrf_vpn, description
+                FROM ip_inventory 
+                WHERE hostname IS NOT NULL AND hostname != ''
+                ORDER BY INET_ATON(ip_address)
+                LIMIT %s
+            """, (limit,))
+            
+        elif status == 'reserved':
+            # Get reserved IPs
+            cursor.execute("""
+                SELECT ip_address, subnet, hostname, vrf_vpn, description
+                FROM ip_inventory 
+                WHERE (hostname IS NULL OR hostname = '') 
+                AND description LIKE '%reserved%'
+                ORDER BY INET_ATON(ip_address)
+                LIMIT %s
+            """, (limit,))
+        
+        if status in ['used', 'reserved']:
+            results = cursor.fetchall()
+            
+            return jsonify({
+                'data': results,
+                'total': len(results),
+                'status': status
+            })
+        
+        cursor.close()
+        connection.close()
+        
+    except Exception as e:
+        print(f"❌ Error in IP details API: {e}")
+        return jsonify({'error': str(e)}), 500
+        
+        # Find matching subnet
+        subnet = None
+        cursor.execute("SELECT subnet FROM subnets ORDER BY subnet")
+        subnets = cursor.fetchall()
+        
+        for subnet_row in subnets:
+            subnet_cidr = subnet_row[0]
+            try:
+                network = ipaddress.ip_network(subnet_cidr, strict=False)
+                ip_obj = ipaddress.ip_address(ip_address)
+                if ip_obj in network:
+                    subnet = subnet_cidr
+                    break
+            except:
+                continue
+        
+        # Insert new IP
+        insert_query = """
+        INSERT INTO ip_inventory (ip_address, subnet, hostname, vrf_vpn, description, status)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        
+        cursor.execute(insert_query, (ip_address, subnet, hostname, vrf_vpn, description, status))
+        connection.commit()
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'IP {ip_address} added successfully',
+            'data': {
+                'ip_address': ip_address,
+                'subnet': subnet,
+                'hostname': hostname,
+                'vrf_vpn': vrf_vpn,
+                'description': description,
+                'status': status
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Existing routes continue...
 @app.route('/api/recent-activity')
 def get_recent_activity():
