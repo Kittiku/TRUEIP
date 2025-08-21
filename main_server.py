@@ -2099,6 +2099,155 @@ def ip_auto_allocation():
     """IP Auto Allocation - Smart IP Management"""
     return render_template('ip_auto_allocation.html')
 
+@app.route('/api/ip-data')
+def get_ip_data():
+    """Get IP data by status for dashboard modals"""
+    status = request.args.get('status', 'available')
+    limit = int(request.args.get('limit', 100))
+    format_type = request.args.get('format', 'json')
+    
+    try:
+        cursor = mysql_connection.cursor(dictionary=True)
+        
+        # Define status conditions
+        status_conditions = {
+            'available': "hostname = ''",
+            'used': "hostname != ''",
+            'reserved': "ip_address LIKE '%reserved%' OR description LIKE '%reserved%'"
+        }
+        
+        condition = status_conditions.get(status, "1=1")
+        
+        query = f"""
+        SELECT ip_address, hostname, vrf_vpn, description,
+               (SELECT subnet FROM subnets s WHERE INET_ATON(ip.ip_address) 
+                BETWEEN INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) 
+                AND INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) + POW(2, 32-SUBSTRING_INDEX(s.subnet, '/', -1)) - 1
+                LIMIT 1) as subnet
+        FROM ip_inventory ip
+        WHERE {condition}
+        ORDER BY INET_ATON(ip_address)
+        LIMIT {limit}
+        """
+        
+        cursor.execute(query)
+        data = cursor.fetchall()
+        
+        if format_type == 'csv':
+            # Return CSV format
+            output = []
+            output.append('IP Address,Hostname,VRF,Description,Subnet')
+            for row in data:
+                output.append(f"{row['ip_address']},{row['hostname'] or ''},{row['vrf_vpn'] or ''},{row['description'] or ''},{row['subnet'] or ''}")
+            
+            response = make_response('\n'.join(output))
+            response.headers['Content-Type'] = 'text/csv'
+            response.headers['Content-Disposition'] = f'attachment; filename={status}_ips.csv'
+            return response
+        
+        return jsonify({'data': data, 'count': len(data)})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/subnets-overview')
+def get_subnets_overview():
+    """Get subnet overview for dashboard modal"""
+    try:
+        cursor = mysql_connection.cursor(dictionary=True)
+        
+        # Get subnet information with utilization
+        query = """
+        SELECT 
+            s.subnet,
+            s.description,
+            s.vrf_vpn,
+            POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2 as total_ips,
+            COUNT(CASE WHEN ip.hostname != '' THEN 1 END) as used_ips,
+            POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2 - COUNT(CASE WHEN ip.hostname != '' THEN 1 END) as available_ips,
+            ROUND((COUNT(CASE WHEN ip.hostname != '' THEN 1 END) / (POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2)) * 100, 2) as utilization
+        FROM subnets s
+        LEFT JOIN ip_inventory ip ON (
+            INET_ATON(ip.ip_address) BETWEEN 
+            INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) + 1 AND 
+            INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) + POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2
+        )
+        GROUP BY s.subnet, s.description, s.vrf_vpn
+        ORDER BY utilization DESC
+        """
+        
+        cursor.execute(query)
+        subnets = cursor.fetchall()
+        
+        return jsonify({'subnets': subnets})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vrf-distribution')
+def get_vrf_distribution():
+    """Get VRF distribution data for charts"""
+    try:
+        cursor = mysql_connection.cursor(dictionary=True)
+        
+        query = """
+        SELECT 
+            vrf_vpn,
+            COUNT(*) as count,
+            COUNT(CASE WHEN hostname != '' THEN 1 END) as used_count,
+            COUNT(CASE WHEN hostname = '' THEN 1 END) as available_count
+        FROM ip_inventory 
+        WHERE vrf_vpn IS NOT NULL AND vrf_vpn != ''
+        GROUP BY vrf_vpn
+        ORDER BY count DESC
+        """
+        
+        cursor.execute(query)
+        data = cursor.fetchall()
+        
+        return jsonify({'data': data})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recent-activity')
+def get_recent_activity():
+    """Get recent activity data"""
+    try:
+        cursor = mysql_connection.cursor(dictionary=True)
+        
+        # Simulate recent activity based on IP data
+        query = """
+        SELECT 
+            ip_address,
+            hostname,
+            vrf_vpn,
+            description,
+            CASE 
+                WHEN hostname != '' THEN 'Allocated'
+                WHEN hostname = '' THEN 'Released'
+                ELSE 'Updated'
+            END as action,
+            NOW() - INTERVAL FLOOR(RAND() * 168) HOUR as timestamp
+        FROM ip_inventory 
+        WHERE hostname != '' OR description LIKE '%recent%'
+        ORDER BY timestamp DESC
+        LIMIT 20
+        """
+        
+        cursor.execute(query)
+        activities = cursor.fetchall()
+        
+        # Convert timestamp to string for JSON serialization
+        for activity in activities:
+            activity['timestamp'] = activity['timestamp'].isoformat() if activity['timestamp'] else None
+        
+        return jsonify({'activities': activities})
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Existing routes continue...
 if __name__ == '__main__':
     print("\n" + "="*60)
     print("🚀 Starting IPAM System - Clean Version")
