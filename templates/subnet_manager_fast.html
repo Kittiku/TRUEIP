@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Subnet Manager - IPAM System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            color: #2d3748;
+            margin-bottom: 10px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+            padding: 10px 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .filter-select {
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+            min-width: 120px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            color: #718096;
+        }
+
+        .subnets-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .subnet-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .subnet-table th,
+        .subnet-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .subnet-table th {
+            background: #f7fafc;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .subnet-row {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .subnet-row:hover {
+            background: #f7fafc;
+        }
+
+        .utilization-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .utilization-fill {
+            height: 100%;
+            transition: width 0.3s ease;
+        }
+
+        .util-low { background: #48bb78; }
+        .util-medium { background: #ed8936; }
+        .util-high { background: #f56565; }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .status-available { background: #c6f6d5; color: #22543d; }
+        .status-used { background: #fed7d7; color: #742a2a; }
+        .status-reserved { background: #feebc8; color: #7b341e; }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .page-btn {
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .page-btn:hover {
+            background: #f7fafc;
+        }
+
+        .page-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #742a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            backdrop-filter: blur(5px);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 90%;
+            width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            z-index: 1001;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #2d3748;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #718096;
+            transition: color 0.3s ease;
+        }
+
+        .close-btn:hover {
+            color: #f56565;
+        }
+
+        .ip-search {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .ip-table {
+            width: 100%;
+            border-collapse: collapse;
+            max-height: 400px;
+            overflow-y: auto;
+            display: block;
+        }
+
+        .ip-table thead {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .ip-table tbody {
+            display: block;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .ip-table tbody tr {
+            display: table;
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .ip-table th,
+        .ip-table td {
+            padding: 8px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+            width: 25%;
+        }
+
+        .ip-table th {
+            background: #f7fafc;
+            font-weight: 600;
+            color: #2d3748;
+            position: sticky;
+            top: 0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .subnet-table {
+                font-size: 0.9rem;
+            }
+
+            .modal {
+                width: 95%;
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Fast Subnet Manager</h1>
+            <p>High-performance subnet management with lazy loading</p>
+        </div>
+
+        <div class="controls">
+            <input type="text" id="searchInput" class="search-box" placeholder="Search subnets, IPs, descriptions...">
+            <select id="utilizationFilter" class="filter-select">
+                <option value="">All Utilization</option>
+                <option value="low">Low (< 50%)</option>
+                <option value="medium">Medium (50-80%)</option>
+                <option value="high">High (> 80%)</option>
+            </select>
+            <select id="cidrFilter" class="filter-select">
+                <option value="">All CIDR</option>
+                <option value="24">/24 Networks</option>
+                <option value="26">/26 Networks</option>
+                <option value="28">/28 Networks</option>
+                <option value="30">/30 Networks</option>
+            </select>
+            <button class="btn btn-primary" onclick="refreshData()">🔄 Refresh</button>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <div class="stat-value" id="totalSubnets">-</div>
+                <div class="stat-label">Total Subnets</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalIPs">-</div>
+                <div class="stat-label">Total IPs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="usedIPs">-</div>
+                <div class="stat-label">Used IPs</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="availableIPs">-</div>
+                <div class="stat-label">Available IPs</div>
+            </div>
+        </div>
+
+        <div class="subnets-container">
+            <div id="loadingIndicator" class="loading">
+                <div>🔄 Loading subnet data...</div>
+            </div>
+
+            <div id="errorMessage" class="error" style="display: none;">
+                <div>❌ Error loading data. Please try again.</div>
+            </div>
+
+            <table class="subnet-table" id="subnetTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Subnet</th>
+                        <th>Total IPs</th>
+                        <th>Used / Available</th>
+                        <th>Utilization</th>
+                        <th>VRF</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="subnetTableBody">
+                </tbody>
+            </table>
+
+            <div class="pagination" id="pagination" style="display: none;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Subnet Details -->
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+    <div class="modal" id="subnetModal">
+        <div class="modal-header">
+            <h2 class="modal-title" id="modalTitle">Subnet Details</h2>
+            <button class="close-btn" onclick="closeModal()">&times;</button>
+        </div>
+        <div id="modalContent">
+            <input type="text" id="ipSearchInput" class="ip-search" placeholder="Search IP addresses...">
+            
+            <div id="subnetStats" style="margin-bottom: 20px;">
+                <!-- Stats will be populated here -->
+            </div>
+
+            <div id="ipTableContainer">
+                <table class="ip-table" id="ipTable">
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Status</th>
+                            <th>Hostname</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ipTableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="ipPagination">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentSubnets = [];
+        let currentSubnetData = [];
+        let currentPage = 1;
+        let currentIpPage = 1;
+        let itemsPerPage = 20;
+        let ipsPerPage = 50;
+        let currentSubnet = null;
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSubnetList();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('searchInput').addEventListener('input', debounce(filterSubnets, 300));
+            document.getElementById('utilizationFilter').addEventListener('change', filterSubnets);
+            document.getElementById('cidrFilter').addEventListener('change', filterSubnets);
+            document.getElementById('ipSearchInput').addEventListener('input', debounce(filterIPs, 300));
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        async function loadSubnetList() {
+            try {
+                showLoading();
+                hideError();
+
+                const response = await fetch('/api/fast-subnets');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load data');
+                }
+
+                currentSubnets = data.subnets;
+                updateStats(data.stats);
+                renderSubnets();
+                hideLoading();
+
+            } catch (error) {
+                console.error('Error loading subnets:', error);
+                showError('Failed to load subnet data: ' + error.message);
+                hideLoading();
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('totalSubnets').textContent = stats.total_subnets.toLocaleString();
+            document.getElementById('totalIPs').textContent = stats.total_ips.toLocaleString();
+            document.getElementById('usedIPs').textContent = stats.used_ips.toLocaleString();
+            document.getElementById('availableIPs').textContent = stats.available_ips.toLocaleString();
+        }
+
+        function renderSubnets() {
+            const tbody = document.getElementById('subnetTableBody');
+            const table = document.getElementById('subnetTable');
+            
+            if (currentSubnets.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 40px;">No subnets found</td></tr>';
+                table.style.display = 'table';
+                return;
+            }
+
+            // Calculate pagination
+            const totalPages = Math.ceil(currentSubnets.length / itemsPerPage);
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const pageSubnets = currentSubnets.slice(startIndex, endIndex);
+
+            tbody.innerHTML = pageSubnets.map(subnet => `
+                <tr class="subnet-row" onclick="openSubnetDetails('${subnet.subnet}')">
+                    <td>
+                        <div style="font-weight: 600;">${subnet.subnet}</div>
+                        <div style="font-size: 0.8rem; color: #718096;">${subnet.description || 'No description'}</div>
+                    </td>
+                    <td>${subnet.total_ips.toLocaleString()}</td>
+                    <td>
+                        <div>${subnet.used_ips} / ${subnet.available_ips}</div>
+                        <div class="utilization-bar">
+                            <div class="utilization-fill ${getUtilizationClass(subnet.utilization)}" 
+                                 style="width: ${subnet.utilization}%"></div>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="status-badge ${getUtilizationClass(subnet.utilization)}">
+                            ${subnet.utilization.toFixed(1)}%
+                        </span>
+                    </td>
+                    <td>${subnet.vrf || '-'}</td>
+                    <td>
+                        <button class="btn btn-primary" style="padding: 5px 10px; font-size: 0.8rem;" 
+                                onclick="event.stopPropagation(); openSubnetDetails('${subnet.subnet}')">
+                            View Details
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            table.style.display = 'table';
+            renderPagination(totalPages);
+        }
+
+        function renderPagination(totalPages) {
+            const pagination = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                pagination.style.display = 'none';
+                return;
+            }
+
+            let paginationHTML = '';
+            
+            // Previous button
+            paginationHTML += `<button class="page-btn" onclick="changePage(${currentPage - 1})" 
+                                      ${currentPage === 1 ? 'disabled' : ''}>‹</button>`;
+            
+            // Page numbers
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 2 && i <= currentPage + 2)) {
+                    paginationHTML += `<button class="page-btn ${i === currentPage ? 'active' : ''}" 
+                                              onclick="changePage(${i})">${i}</button>`;
+                } else if (i === currentPage - 3 || i === currentPage + 3) {
+                    paginationHTML += '<span>...</span>';
+                }
+            }
+            
+            // Next button
+            paginationHTML += `<button class="page-btn" onclick="changePage(${currentPage + 1})" 
+                                      ${currentPage === totalPages ? 'disabled' : ''}>›</button>`;
+            
+            pagination.innerHTML = paginationHTML;
+            pagination.style.display = 'flex';
+        }
+
+        function changePage(page) {
+            const totalPages = Math.ceil(currentSubnets.length / itemsPerPage);
+            if (page < 1 || page > totalPages) return;
+            
+            currentPage = page;
+            renderSubnets();
+        }
+
+        function filterSubnets() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const utilizationFilter = document.getElementById('utilizationFilter').value;
+            const cidrFilter = document.getElementById('cidrFilter').value;
+
+            // Reset to first page
+            currentPage = 1;
+
+            // Apply filters
+            currentSubnets = currentSubnets.filter(subnet => {
+                // Search filter
+                const matchesSearch = !searchTerm || 
+                    subnet.subnet.toLowerCase().includes(searchTerm) ||
+                    (subnet.description && subnet.description.toLowerCase().includes(searchTerm)) ||
+                    (subnet.vrf && subnet.vrf.toLowerCase().includes(searchTerm));
+
+                // Utilization filter
+                const matchesUtilization = !utilizationFilter ||
+                    (utilizationFilter === 'low' && subnet.utilization < 50) ||
+                    (utilizationFilter === 'medium' && subnet.utilization >= 50 && subnet.utilization <= 80) ||
+                    (utilizationFilter === 'high' && subnet.utilization > 80);
+
+                // CIDR filter
+                const matchesCidr = !cidrFilter || subnet.subnet.includes(`/${cidrFilter}`);
+
+                return matchesSearch && matchesUtilization && matchesCidr;
+            });
+
+            renderSubnets();
+        }
+
+        async function openSubnetDetails(subnetName) {
+            try {
+                currentSubnet = subnetName;
+                currentIpPage = 1;
+
+                // Show modal
+                document.getElementById('modalOverlay').style.display = 'block';
+                document.getElementById('subnetModal').style.display = 'block';
+                document.getElementById('modalTitle').textContent = `Subnet Details: ${subnetName}`;
+
+                // Load subnet data with pagination
+                await loadSubnetIPs(subnetName, 1);
+
+            } catch (error) {
+                console.error('Error opening subnet details:', error);
+                alert('Error loading subnet details: ' + error.message);
+            }
+        }
+
+        async function loadSubnetIPs(subnetName, page = 1) {
+            try {
+                const response = await fetch(`/api/fast-subnet-ips/${encodeURIComponent(subnetName)}?page=${page}&per_page=${ipsPerPage}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to load subnet IPs');
+                }
+
+                currentSubnetData = data.ips;
+                renderSubnetStats(data.stats);
+                renderSubnetIPs();
+                renderIpPagination(data.pagination);
+
+            } catch (error) {
+                console.error('Error loading subnet IPs:', error);
+                document.getElementById('modalContent').innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: #f56565;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">⚠️</div>
+                        <div>Error loading subnet details</div>
+                        <div style="font-size: 0.9rem; margin-top: 5px;">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+
+        function renderSubnetStats(stats) {
+            document.getElementById('subnetStats').innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; margin-bottom: 15px;">
+                    <div style="text-align: center; padding: 10px; background: #f7fafc; border-radius: 8px;">
+                        <div style="font-size: 1.2rem; font-weight: bold; color: #48bb78;">${stats.available_ips}</div>
+                        <div style="font-size: 0.8rem; color: #718096;">Available</div>
+                    </div>
+                    <div style="text-align: center; padding: 10px; background: #f7fafc; border-radius: 8px;">
+                        <div style="font-size: 1.2rem; font-weight: bold; color: #f56565;">${stats.used_ips}</div>
+                        <div style="font-size: 0.8rem; color: #718096;">Used</div>
+                    </div>
+                    <div style="text-align: center; padding: 10px; background: #f7fafc; border-radius: 8px;">
+                        <div style="font-size: 1.2rem; font-weight: bold; color: #ed8936;">${stats.reserved_ips}</div>
+                        <div style="font-size: 0.8rem; color: #718096;">Reserved</div>
+                    </div>
+                    <div style="text-align: center; padding: 10px; background: #f7fafc; border-radius: 8px;">
+                        <div style="font-size: 1.2rem; font-weight: bold; color: #667eea;">${stats.total_ips}</div>
+                        <div style="font-size: 0.8rem; color: #718096;">Total</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSubnetIPs() {
+            const tbody = document.getElementById('ipTableBody');
+            
+            if (currentSubnetData.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">No IP data found</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = currentSubnetData.map(ip => `
+                <tr ondblclick="editIP('${ip.ip_address}')">
+                    <td style="font-family: monospace; font-weight: 500;">${ip.ip_address}</td>
+                    <td>
+                        <span class="status-badge status-${ip.status}">
+                            ${ip.status.toUpperCase()}
+                        </span>
+                    </td>
+                    <td>${ip.hostname || '-'}</td>
+                    <td>${ip.description || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderIpPagination(pagination) {
+            const ipPagination = document.getElementById('ipPagination');
+            
+            if (pagination.total_pages <= 1) {
+                ipPagination.style.display = 'none';
+                return;
+            }
+
+            let paginationHTML = '';
+            
+            // Previous button
+            paginationHTML += `<button class="page-btn" onclick="changeIpPage(${pagination.current_page - 1})" 
+                                      ${pagination.current_page === 1 ? 'disabled' : ''}>‹</button>`;
+            
+            // Page numbers
+            for (let i = 1; i <= pagination.total_pages; i++) {
+                if (i === 1 || i === pagination.total_pages || (i >= pagination.current_page - 2 && i <= pagination.current_page + 2)) {
+                    paginationHTML += `<button class="page-btn ${i === pagination.current_page ? 'active' : ''}" 
+                                              onclick="changeIpPage(${i})">${i}</button>`;
+                } else if (i === pagination.current_page - 3 || i === pagination.current_page + 3) {
+                    paginationHTML += '<span>...</span>';
+                }
+            }
+            
+            // Next button
+            paginationHTML += `<button class="page-btn" onclick="changeIpPage(${pagination.current_page + 1})" 
+                                      ${pagination.current_page === pagination.total_pages ? 'disabled' : ''}>›</button>`;
+            
+            ipPagination.innerHTML = paginationHTML;
+            ipPagination.style.display = 'flex';
+        }
+
+        function changeIpPage(page) {
+            if (!currentSubnet) return;
+            currentIpPage = page;
+            loadSubnetIPs(currentSubnet, page);
+        }
+
+        function filterIPs() {
+            const searchTerm = document.getElementById('ipSearchInput').value.toLowerCase();
+            
+            if (!searchTerm) {
+                loadSubnetIPs(currentSubnet, 1);
+                return;
+            }
+
+            const filteredIPs = currentSubnetData.filter(ip => 
+                ip.ip_address.toLowerCase().includes(searchTerm) ||
+                (ip.hostname && ip.hostname.toLowerCase().includes(searchTerm)) ||
+                (ip.description && ip.description.toLowerCase().includes(searchTerm))
+            );
+
+            currentSubnetData = filteredIPs;
+            renderSubnetIPs();
+        }
+
+        function editIP(ipAddress) {
+            // Placeholder for IP editing functionality
+            alert(`Edit IP: ${ipAddress}\n(To be implemented)`);
+        }
+
+        function getUtilizationClass(utilization) {
+            if (utilization < 50) return 'util-low';
+            if (utilization <= 80) return 'util-medium';
+            return 'util-high';
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').style.display = 'none';
+            document.getElementById('subnetModal').style.display = 'none';
+            currentSubnet = null;
+            currentSubnetData = [];
+        }
+
+        function refreshData() {
+            currentPage = 1;
+            loadSubnetList();
+        }
+
+        function showLoading() {
+            document.getElementById('loadingIndicator').style.display = 'block';
+            document.getElementById('subnetTable').style.display = 'none';
+            document.getElementById('pagination').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.getElementById('loadingIndicator').style.display = 'none';
+        }
+
+        function showError(message) {
+            const errorElement = document.getElementById('errorMessage');
+            errorElement.querySelector('div').textContent = message;
+            errorElement.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        // Close modal when pressing Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -2135,6 +2135,242 @@ def get_usage_color(percentage):
     else:
         return 'red'
 
+@app.route('/subnet-manager-fast')
+def subnet_manager_fast():
+    """Fast Subnet Manager with Pagination"""
+    return render_template('subnet_manager_fast.html')
+
+@app.route('/api/fast-subnets')
+def api_fast_subnets():
+    """Fast API for subnet list with summary stats, search and filters"""
+    try:
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        
+        # Get filter parameters
+        search = request.args.get('search', '').strip()
+        utilization_filter = request.args.get('utilization', '').strip()
+        cidr_filter = request.args.get('cidr', '').strip()
+        
+        # Limit per_page to prevent abuse
+        per_page = min(per_page, 100)
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Build WHERE clause for filters
+        where_conditions = ["subnet IS NOT NULL AND subnet != ''"]
+        params = []
+        
+        if search:
+            where_conditions.append("(subnet LIKE %s OR ip_address LIKE %s)")
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param])
+        
+        if cidr_filter:
+            where_conditions.append("subnet LIKE %s")
+            params.append(f"%/{cidr_filter}")
+        
+        where_clause = " AND ".join(where_conditions)
+        
+        # Get subnet summary without generating all IPs (much faster)
+        cursor.execute(f"""
+            SELECT 
+                subnet,
+                COUNT(*) as records_in_db,
+                COUNT(CASE WHEN hostname != '' AND hostname IS NOT NULL THEN 1 END) as used_count,
+                COUNT(CASE WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 1 END) as reserved_count,
+                GROUP_CONCAT(DISTINCT vrf_vpn) as vrf_list,
+                MAX(updated_at) as last_activity
+            FROM ip_inventory 
+            WHERE {where_clause}
+            GROUP BY subnet
+            ORDER BY subnet
+        """, params)
+        
+        subnet_stats = cursor.fetchall()
+        
+        # Process and filter subnets
+        processed_subnets = []
+        total_ips = 0
+        total_used = 0
+        total_available = 0
+        
+        for stats in subnet_stats:
+            subnet = stats['subnet']
+            try:
+                import ipaddress
+                network = ipaddress.ip_network(subnet, strict=False)
+                theoretical_capacity = len(list(network.hosts()))
+                
+                used_ips = stats['used_count']
+                reserved_ips = stats['reserved_count']
+                available_ips = theoretical_capacity - used_ips - reserved_ips
+                
+                if available_ips < 0:
+                    available_ips = 0
+                
+                utilization = (used_ips / theoretical_capacity * 100) if theoretical_capacity > 0 else 0
+                
+                # Apply utilization filter
+                if utilization_filter:
+                    if utilization_filter == 'low' and utilization > 25:
+                        continue
+                    elif utilization_filter == 'medium' and (utilization <= 25 or utilization > 75):
+                        continue
+                    elif utilization_filter == 'high' and utilization <= 75:
+                        continue
+                
+                subnet_data = {
+                    'subnet': subnet,
+                    'total_ips': theoretical_capacity,
+                    'used_ips': used_ips,
+                    'available_ips': available_ips,
+                    'reserved_ips': reserved_ips,
+                    'utilization': round(utilization, 1),
+                    'vrf': stats['vrf_list'],
+                    'last_activity': stats['last_activity'].strftime('%Y-%m-%d') if stats['last_activity'] else 'Never',
+                    'description': f'Subnet {subnet}'
+                }
+                
+                processed_subnets.append(subnet_data)
+                
+                total_ips += theoretical_capacity
+                total_used += used_ips
+                total_available += available_ips
+                
+            except Exception as e:
+                print(f"Error processing subnet {subnet}: {e}")
+                continue
+        
+        # Apply pagination
+        total_subnets = len(processed_subnets)
+        total_pages = (total_subnets + per_page - 1) // per_page
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_subnets = processed_subnets[start_idx:end_idx]
+        
+        cursor.close()
+        connection.close()
+        
+        # Calculate average utilization
+        avg_utilization = (total_used / total_ips * 100) if total_ips > 0 else 0
+        
+        return jsonify({
+            'subnets': paginated_subnets,
+            'total_subnets': total_subnets,
+            'total_used': total_used,
+            'total_free': total_available,
+            'avg_utilization': round(avg_utilization, 1),
+            'current_page': page,
+            'total_pages': total_pages,
+            'per_page': per_page,
+            'has_next': page < total_pages,
+            'has_prev': page > 1
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in fast subnets API: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/fast-subnet-ips/<path:subnet_name>')
+def api_fast_subnet_ips(subnet_name):
+    """Fast API for subnet IPs with pagination"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        
+        # Limit per_page to prevent abuse
+        per_page = min(per_page, 100)
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get existing IPs from database
+        cursor.execute("""
+            SELECT 
+                ip_address, 
+                hostname, 
+                description, 
+                vrf_vpn,
+                CASE 
+                    WHEN hostname != '' AND hostname IS NOT NULL THEN 'used'
+                    WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 'reserved'
+                    ELSE 'available'
+                END as status
+            FROM ip_inventory 
+            WHERE subnet = %s 
+            ORDER BY INET_ATON(ip_address)
+        """, (subnet_name,))
+        
+        existing_ips = cursor.fetchall()
+        existing_ip_dict = {ip['ip_address']: ip for ip in existing_ips}
+        
+        # Calculate subnet stats
+        network = ipaddress.ip_network(subnet_name, strict=False)
+        all_host_ips = list(network.hosts())
+        total_ips = len(all_host_ips)
+        
+        # Count actual usage
+        used_count = len([ip for ip in existing_ips if ip['status'] == 'used'])
+        reserved_count = len([ip for ip in existing_ips if ip['status'] == 'reserved'])
+        available_count = total_ips - used_count - reserved_count
+        
+        # Generate paginated IP list
+        start_index = (page - 1) * per_page
+        end_index = start_index + per_page
+        page_host_ips = all_host_ips[start_index:end_index]
+        
+        page_ips = []
+        for ip_obj in page_host_ips:
+            ip_str = str(ip_obj)
+            if ip_str in existing_ip_dict:
+                page_ips.append(existing_ip_dict[ip_str])
+            else:
+                page_ips.append({
+                    'ip_address': ip_str,
+                    'hostname': '',
+                    'description': '',
+                    'vrf_vpn': '',
+                    'status': 'available'
+                })
+        
+        # Calculate pagination info
+        total_pages = (total_ips + per_page - 1) // per_page
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'ips': page_ips,
+            'stats': {
+                'total_ips': total_ips,
+                'used_ips': used_count,
+                'reserved_ips': reserved_count,
+                'available_ips': available_count,
+                'utilization': round((used_count / total_ips * 100), 1) if total_ips > 0 else 0
+            },
+            'pagination': {
+                'current_page': page,
+                'per_page': per_page,
+                'total_pages': total_pages,
+                'total_items': total_ips,
+                'has_next': page < total_pages,
+                'has_prev': page > 1
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in fast subnet IPs API: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/subnet-monitor')
 def subnet_monitor():
     """Subnet Monitor Dashboard"""

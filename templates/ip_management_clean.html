@@ -684,6 +684,47 @@
                         </div>
                     </div>
 
+                    <!-- Enhanced Search and Filter Controls -->
+                    <div class="mb-6 bg-gray-50 rounded-lg p-4">
+                        <div class="flex flex-wrap gap-4 items-center">
+                            <div class="flex-1 min-w-64">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Search Subnets</label>
+                                <div class="relative">
+                                    <input type="text" id="subnet-search-input" placeholder="Search by subnet, IP range, or CIDR..." 
+                                           class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Utilization</label>
+                                    <select id="utilization-filter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">All</option>
+                                        <option value="low">Low (0-25%)</option>
+                                        <option value="medium">Medium (25-75%)</option>
+                                        <option value="high">High (75-100%)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">CIDR</label>
+                                    <select id="cidr-filter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        <option value="">All</option>
+                                        <option value="24">/24</option>
+                                        <option value="25">/25</option>
+                                        <option value="26">/26</option>
+                                        <option value="27">/27</option>
+                                        <option value="28">/28</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex items-end">
+                                <button onclick="resetSubnetFilters()" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
+                                    <i class="fas fa-undo mr-2"></i>Reset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Subnet Grid -->
                     <div id="subnet-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div class="text-center py-8"><i class="fas fa-spinner loading-spinner text-2xl"></i><p class="mt-2">Loading...</p></div>
@@ -1974,35 +2015,74 @@
             buttons.innerHTML = paginationHTML;
         }
 
-        // Load subnet management data
+        // Enhanced Fast Subnet Management Variables
+        let currentSubnetPage = 1;
+        const subnetsPerPage = 20;
+        let totalSubnetPages = 1;
+        let subnetSearchTimeout;
+
+        // Load subnet management data with pagination
         async function loadSubnetManagement() {
             try {
-                const cidrInput = document.getElementById('cidr-input')?.value || '24';
-                // Extract number from CIDR input (e.g., "/24" or "24" -> "24")
-                const cidrNumber = cidrInput.replace('/', '');
-                const response = await fetch(`/api/subnet-monitor?cidr=${cidrNumber}`);
+                // Show loading indicator
+                const container = document.getElementById('subnet-grid');
+                container.innerHTML = '<div class="col-span-full text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2 text-gray-600">Loading subnets...</p></div>';
+                
+                // Get current filters
+                const filters = getCurrentSubnetFilters();
+                
+                // Build API URL with filters
+                const params = new URLSearchParams({
+                    page: currentSubnetPage,
+                    per_page: subnetsPerPage,
+                    ...filters
+                });
+                
+                // Use fast API with pagination and filters
+                const response = await fetch(`/api/fast-subnets?${params}`);
                 const data = await response.json();
                 
-                const container = document.getElementById('subnet-grid');
-                
                 if (!data.subnets || data.subnets.length === 0) {
-                    container.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500">No subnet data available</div>';
+                    container.innerHTML = '<div class="col-span-full text-center py-8 text-gray-500"><i class="fas fa-search text-2xl"></i><p class="mt-2">No subnets found with current filters</p></div>';
                     return;
                 }
 
-                // Update statistics
-                const totalUsed = data.subnets.reduce((sum, subnet) => sum + subnet.used, 0);
-                const totalFree = data.subnets.reduce((sum, subnet) => sum + subnet.free, 0);
-                const totalAddresses = totalUsed + totalFree;
-                const avgUtilization = totalAddresses > 0 ? (totalUsed / totalAddresses * 100) : 0;
-
-                document.getElementById('total-subnets-count').textContent = data.total_subnets || data.subnets.length;
-                document.getElementById('total-used-count').textContent = totalUsed.toLocaleString();
-                document.getElementById('total-free-count').textContent = totalFree.toLocaleString();
-                document.getElementById('avg-utilization').textContent = avgUtilization.toFixed(1) + '%';
+                // Update pagination info
+                totalSubnetPages = data.total_pages;
                 
-                container.innerHTML = data.subnets.map(subnet => `
-                    <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer border-l-4 border-${getStatusColorClass(subnet.status_color)}-500" onclick="openSubnetDetail('${subnet.subnet}')">
+                // Update statistics with actual data from API
+                document.getElementById('total-subnets-count').textContent = data.total_subnets?.toLocaleString() || '0';
+                document.getElementById('total-used-count').textContent = data.total_used?.toLocaleString() || '0';
+                document.getElementById('total-free-count').textContent = data.total_free?.toLocaleString() || '0';
+                document.getElementById('avg-utilization').textContent = data.avg_utilization?.toFixed(1) + '%' || '0%';
+                
+                // Render subnets with enhanced performance
+                renderSubnetCards(data.subnets);
+                
+                // Update pagination controls
+                updateSubnetPagination();
+                
+                // Setup search and filters if not already done
+                setupSubnetSearchAndFilters();
+                
+            } catch (error) {
+                console.error('Error loading subnet management:', error);
+                const container = document.getElementById('subnet-grid');
+                container.innerHTML = '<div class="col-span-full text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">Failed to load subnet data</p></div>';
+                showToast('Failed to load subnet data', 'error');
+            }
+        }
+
+        // Enhanced subnet card rendering
+        function renderSubnetCards(subnets) {
+            const container = document.getElementById('subnet-grid');
+            
+            container.innerHTML = subnets.map(subnet => {
+                const utilizationColor = subnet.utilization < 25 ? 'green' : 
+                                       subnet.utilization < 75 ? 'yellow' : 'red';
+                
+                return `
+                    <div class="bg-white rounded-lg shadow p-6 hover:shadow-lg transition cursor-pointer border-l-4 border-${utilizationColor}-500" onclick="openFastSubnetDetail('${subnet.subnet}')">
                         <div class="flex justify-between items-start mb-4">
                             <h4 class="font-mono text-lg font-semibold text-gray-900">${subnet.subnet}</h4>
                             <span class="text-sm px-3 py-1 bg-blue-100 text-blue-800 rounded-full">
@@ -2013,15 +2093,15 @@
                         <div class="space-y-3">
                             <div class="flex justify-between text-sm">
                                 <span class="text-gray-600">Total IPs:</span>
-                                <span class="font-semibold">${subnet.total_addresses.toLocaleString()}</span>
+                                <span class="font-semibold">${subnet.total_ips?.toLocaleString() || 'N/A'}</span>
                             </div>
                             <div class="flex justify-between text-sm">
                                 <span class="text-gray-600">Used:</span>
-                                <span class="font-semibold text-red-600">${subnet.used}</span>
+                                <span class="font-semibold text-red-600">${subnet.used_ips || 0}</span>
                             </div>
                             <div class="flex justify-between text-sm">
                                 <span class="text-gray-600">Available:</span>
-                                <span class="font-semibold text-green-600">${subnet.free}</span>
+                                <span class="font-semibold text-green-600">${subnet.available_ips || 0}</span>
                             </div>
                             <div class="flex justify-between text-sm">
                                 <span class="text-gray-600">Reserved:</span>
@@ -2031,36 +2111,232 @@
                         
                         <div class="mt-4">
                             <div class="w-full bg-gray-200 rounded-full h-2">
-                                <div class="bg-${getStatusColorClass(subnet.status_color)}-600 h-2 rounded-full" style="width: ${subnet.usage_percentage}%"></div>
+                                <div class="bg-${utilizationColor}-600 h-2 rounded-full" style="width: ${subnet.utilization || 0}%"></div>
                             </div>
                             <div class="flex justify-between text-xs text-gray-500 mt-1">
                                 <span>Utilization</span>
-                                <span>${subnet.usage_percentage}%</span>
+                                <span>${subnet.utilization?.toFixed(1) || 0}%</span>
                             </div>
                         </div>
-                        
-                        ${subnet.vrfs ? `
-                            <div class="mt-3 pt-3 border-t border-gray-200">
-                                <div class="text-xs text-gray-500 mb-1">Service Domain:</div>
-                                <div class="text-xs text-purple-600 truncate">${subnet.vrfs}</div>
-                            </div>
-                        ` : ''}
                         
                         <div class="mt-3 pt-3 border-t border-gray-200">
                             <div class="text-xs text-gray-500 mb-2">
                                 <span class="font-medium">Service Domain:</span> 
-                                <span class="text-blue-600">${subnet.vrf_vpns ? subnet.vrf_vpns.join(', ') : 'default'}</span>
+                                <span class="text-blue-600">DEFAULT-VRF</span>
                             </div>
                             <div class="text-xs text-blue-600 font-medium">
                                 <i class="fas fa-info-circle mr-1"></i>Click to view detailed IP list
                             </div>
                         </div>
                     </div>
-                `).join('');
+                `;
+            }).join('');
+        }
+
+        // Enhanced fast subnet detail function
+        async function openFastSubnetDetail(subnet) {
+            try {
+                // Show loading modal
+                const modal = document.getElementById('subnet-modal');
+                const modalTitle = document.getElementById('modal-subnet-title');
+                const modalContent = document.getElementById('subnet-details-content');
+                
+                modalTitle.textContent = `Subnet Details - ${subnet}`;
+                modalContent.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2">Loading subnet details...</p></div>';
+                modal.classList.remove('hidden');
+                
+                // Fetch detailed data using fast API
+                const response = await fetch(`/api/fast-subnet-ips?subnet=${encodeURIComponent(subnet)}&page=1&per_page=50`);
+                const data = await response.json();
+                
+                if (data.error) {
+                    modalContent.innerHTML = `<div class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">${data.error}</p></div>`;
+                    return;
+                }
+                
+                // Render subnet detail with pagination
+                renderSubnetDetailModal(data, subnet);
+                
             } catch (error) {
-                console.error('Error loading subnet management:', error);
-                showToast('Failed to load subnet data', 'error');
+                console.error('Error opening subnet detail:', error);
+                showToast('Failed to load subnet details', 'error');
             }
+        }
+
+        // Render subnet detail modal with pagination
+        function renderSubnetDetailModal(data, subnet) {
+            const modalContent = document.getElementById('subnet-details-content');
+            
+            modalContent.innerHTML = `
+                <div class="mb-6">
+                    <div class="grid grid-cols-4 gap-4 mb-6">
+                        <div class="bg-blue-50 rounded-lg p-4 text-center">
+                            <div class="text-2xl font-bold text-blue-600">${data.total_ips}</div>
+                            <div class="text-sm text-blue-600">Total IPs</div>
+                        </div>
+                        <div class="bg-red-50 rounded-lg p-4 text-center">
+                            <div class="text-2xl font-bold text-red-600">${data.used_count}</div>
+                            <div class="text-sm text-red-600">Used</div>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4 text-center">
+                            <div class="text-2xl font-bold text-green-600">${data.available_count}</div>
+                            <div class="text-sm text-green-600">Available</div>
+                        </div>
+                        <div class="bg-purple-50 rounded-lg p-4 text-center">
+                            <div class="text-2xl font-bold text-purple-600">${data.utilization?.toFixed(1) || 0}%</div>
+                            <div class="text-sm text-purple-600">Utilization</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white border rounded-lg overflow-hidden">
+                        <div class="max-h-96 overflow-y-auto">
+                            <table class="min-w-full">
+                                <thead class="bg-gray-50 sticky top-0">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">IP Address</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Hostname</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+                                    ${data.ips.map(ip => `
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-4 py-2 font-mono text-sm">${ip.ip_address}</td>
+                                            <td class="px-4 py-2">
+                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ip.status === 'Available' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                                    ${ip.status}
+                                                </span>
+                                            </td>
+                                            <td class="px-4 py-2 text-sm">${ip.hostname || '-'}</td>
+                                            <td class="px-4 py-2 text-sm">
+                                                ${ip.status === 'Available' ? 
+                                                    '<button class="text-blue-600 hover:text-blue-800 text-xs">Reserve</button>' : 
+                                                    '<button class="text-red-600 hover:text-red-800 text-xs">Release</button>'
+                                                }
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        ${data.total_pages > 1 ? `
+                            <div class="px-4 py-3 bg-gray-50 border-t flex justify-between items-center">
+                                <div class="text-sm text-gray-500">
+                                    Page ${data.current_page} of ${data.total_pages} (${data.total_ips} total IPs)
+                                </div>
+                                <div class="flex space-x-2">
+                                    ${data.current_page > 1 ? `<button onclick="loadSubnetDetailPage('${subnet}', ${data.current_page - 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Previous</button>` : ''}
+                                    ${data.current_page < data.total_pages ? `<button onclick="loadSubnetDetailPage('${subnet}', ${data.current_page + 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Next</button>` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Load specific page for subnet detail
+        async function loadSubnetDetailPage(subnet, page) {
+            try {
+                const modalContent = document.getElementById('subnet-details-content');
+                const response = await fetch(`/api/fast-subnet-ips?subnet=${encodeURIComponent(subnet)}&page=${page}&per_page=50`);
+                const data = await response.json();
+                
+                renderSubnetDetailModal(data, subnet);
+            } catch (error) {
+                console.error('Error loading subnet detail page:', error);
+                showToast('Failed to load page', 'error');
+            }
+        }
+
+        // Update pagination controls
+        function updateSubnetPagination() {
+            // Add pagination controls after subnet grid if needed
+            const existingPagination = document.getElementById('subnet-pagination');
+            if (existingPagination) {
+                existingPagination.remove();
+            }
+            
+            if (totalSubnetPages > 1) {
+                const container = document.getElementById('subnet-grid');
+                const pagination = document.createElement('div');
+                pagination.id = 'subnet-pagination';
+                pagination.className = 'col-span-full flex justify-center items-center space-x-2 mt-6';
+                pagination.innerHTML = `
+                    ${currentSubnetPage > 1 ? `<button onclick="loadSubnetPage(${currentSubnetPage - 1})" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">Previous</button>` : ''}
+                    <span class="px-4 py-2 text-sm text-gray-600">Page ${currentSubnetPage} of ${totalSubnetPages}</span>
+                    ${currentSubnetPage < totalSubnetPages ? `<button onclick="loadSubnetPage(${currentSubnetPage + 1})" class="px-4 py-2 bg-white border rounded-lg hover:bg-gray-50">Next</button>` : ''}
+                `;
+                container.parentNode.insertBefore(pagination, container.nextSibling);
+            }
+        }
+
+        // Load specific subnet page
+        async function loadSubnetPage(page) {
+            currentSubnetPage = page;
+            await loadSubnetManagement();
+        }
+
+        // Enhanced search and filter functions
+        function setupSubnetSearchAndFilters() {
+            const searchInput = document.getElementById('subnet-search-input');
+            const utilizationFilter = document.getElementById('utilization-filter');
+            const cidrFilter = document.getElementById('cidr-filter');
+            
+            // Debounced search
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    clearTimeout(subnetSearchTimeout);
+                    subnetSearchTimeout = setTimeout(() => {
+                        currentSubnetPage = 1;
+                        loadSubnetManagement();
+                    }, 300);
+                });
+            }
+            
+            // Filter change handlers
+            if (utilizationFilter) {
+                utilizationFilter.addEventListener('change', () => {
+                    currentSubnetPage = 1;
+                    loadSubnetManagement();
+                });
+            }
+            
+            if (cidrFilter) {
+                cidrFilter.addEventListener('change', () => {
+                    currentSubnetPage = 1;
+                    loadSubnetManagement();
+                });
+            }
+        }
+
+        // Reset filters
+        function resetSubnetFilters() {
+            const searchInput = document.getElementById('subnet-search-input');
+            const utilizationFilter = document.getElementById('utilization-filter');
+            const cidrFilter = document.getElementById('cidr-filter');
+            
+            if (searchInput) searchInput.value = '';
+            if (utilizationFilter) utilizationFilter.value = '';
+            if (cidrFilter) cidrFilter.value = '';
+            
+            currentSubnetPage = 1;
+            loadSubnetManagement();
+        }
+
+        // Get current filters for API calls
+        function getCurrentSubnetFilters() {
+            const searchInput = document.getElementById('subnet-search-input');
+            const utilizationFilter = document.getElementById('utilization-filter');
+            const cidrFilter = document.getElementById('cidr-filter');
+            
+            return {
+                search: searchInput?.value || '',
+                utilization: utilizationFilter?.value || '',
+                cidr: cidrFilter?.value || ''
+            };
         }
 
         // Helper function to get status color class
