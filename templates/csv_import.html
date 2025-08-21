@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Import - IPAM System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <!-- Header -->
+    <div class="gradient-bg text-white shadow-lg">
+        <div class="container mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <i class="fas fa-upload text-2xl"></i>
+                    <div>
+                        <h1 class="text-2xl font-bold">CSV Data Import</h1>
+                        <p class="text-blue-100">Import IP addresses and subnets from CSV files</p>
+                    </div>
+                </div>
+                <a href="/ip-management" class="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors">
+                    <i class="fas fa-arrow-left mr-2"></i>Back to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Quick Actions -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <!-- Download Sample Files -->
+            <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
+                <div class="flex items-center mb-4">
+                    <div class="bg-blue-100 p-3 rounded-lg mr-4">
+                        <i class="fas fa-download text-blue-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-800">Download Sample Files</h3>
+                        <p class="text-gray-600">Get template CSV files to understand the format</p>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <button onclick="downloadSample('ip_inventory')" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-lg transition-colors flex items-center justify-center">
+                        <i class="fas fa-file-csv mr-2"></i>IP Inventory Template
+                    </button>
+                    <button onclick="downloadSample('subnets')" class="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-3 rounded-lg transition-colors flex items-center justify-center">
+                        <i class="fas fa-file-csv mr-2"></i>Subnets Template
+                    </button>
+                </div>
+            </div>
+
+            <!-- Import Status -->
+            <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
+                <div class="flex items-center mb-4">
+                    <div class="bg-green-100 p-3 rounded-lg mr-4">
+                        <i class="fas fa-chart-line text-green-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-800">Import Statistics</h3>
+                        <p class="text-gray-600">Current database status</p>
+                    </div>
+                </div>
+                <div id="currentStats" class="space-y-2">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total IPs:</span>
+                        <span class="font-semibold" id="totalIPs">Loading...</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Total Subnets:</span>
+                        <span class="font-semibold" id="totalSubnets">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Forms -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- IP Inventory Import -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <div class="flex items-center mb-6">
+                    <div class="bg-purple-100 p-3 rounded-lg mr-4">
+                        <i class="fas fa-network-wired text-purple-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-800">Import IP Inventory</h3>
+                        <p class="text-gray-600">Upload CSV file with IP address data</p>
+                    </div>
+                </div>
+
+                <form id="ipImportForm" enctype="multipart/form-data">
+                    <div class="space-y-4">
+                        <!-- File Upload -->
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-purple-400 transition-colors">
+                            <input type="file" id="ipFile" name="file" accept=".csv" class="hidden" onchange="handleFileSelect(this, 'ipFileName')">
+                            <label for="ipFile" class="cursor-pointer">
+                                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                                <p class="text-gray-600 mb-2">Click to select CSV file or drag and drop</p>
+                                <p class="text-sm text-gray-500">CSV files only, max 16MB</p>
+                            </label>
+                            <div id="ipFileName" class="mt-3 text-sm text-green-600 hidden"></div>
+                        </div>
+
+                        <!-- Conflict Strategy -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Duplicate Handling Strategy</label>
+                            <select name="conflict_strategy" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent">
+                                <option value="ask">Ask for each conflict (Recommended)</option>
+                                <option value="keep_old">Keep existing data</option>
+                                <option value="use_new">Use new data</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg transition-colors flex items-center justify-center">
+                            <i class="fas fa-upload mr-2"></i>Import IP Inventory
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Subnets Import -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <div class="flex items-center mb-6">
+                    <div class="bg-orange-100 p-3 rounded-lg mr-4">
+                        <i class="fas fa-sitemap text-orange-600 text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-800">Import Subnets</h3>
+                        <p class="text-gray-600">Upload CSV file with subnet configuration</p>
+                    </div>
+                </div>
+
+                <form id="subnetImportForm" enctype="multipart/form-data">
+                    <div class="space-y-4">
+                        <!-- File Upload -->
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-orange-400 transition-colors">
+                            <input type="file" id="subnetFile" name="file" accept=".csv" class="hidden" onchange="handleFileSelect(this, 'subnetFileName')">
+                            <label for="subnetFile" class="cursor-pointer">
+                                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-3"></i>
+                                <p class="text-gray-600 mb-2">Click to select CSV file or drag and drop</p>
+                                <p class="text-sm text-gray-500">CSV files only, max 16MB</p>
+                            </label>
+                            <div id="subnetFileName" class="mt-3 text-sm text-green-600 hidden"></div>
+                        </div>
+
+                        <!-- Conflict Strategy -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Duplicate Handling Strategy</label>
+                            <select name="conflict_strategy" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-orange-500 focus:border-transparent">
+                                <option value="ask">Ask for each conflict (Recommended)</option>
+                                <option value="keep_old">Keep existing data</option>
+                                <option value="use_new">Use new data</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="w-full bg-orange-600 hover:bg-orange-700 text-white px-4 py-3 rounded-lg transition-colors flex items-center justify-center">
+                            <i class="fas fa-upload mr-2"></i>Import Subnets
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Import Results -->
+        <div id="importResults" class="mt-8 hidden">
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4">Import Results</h3>
+                <div id="resultsContent"></div>
+            </div>
+        </div>
+
+        <!-- Conflicts Resolution Modal -->
+        <div id="conflictsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50">
+            <div class="flex items-center justify-center min-h-screen p-4">
+                <div class="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                    <div class="gradient-bg text-white p-6">
+                        <h3 class="text-xl font-semibold">Resolve Data Conflicts</h3>
+                        <p class="text-blue-100">Choose how to handle duplicate records</p>
+                    </div>
+                    <div class="p-6 overflow-y-auto max-h-[60vh]">
+                        <div id="conflictsList"></div>
+                    </div>
+                    <div class="border-t border-gray-200 p-6 flex justify-end space-x-3">
+                        <button onclick="closeConflictsModal()" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button onclick="resolveAllConflicts()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
+                            Apply Resolutions
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentConflicts = [];
+        
+        // Load current statistics
+        async function loadCurrentStats() {
+            try {
+                const response = await fetch('/api/statistics');
+                const data = await response.json();
+                
+                document.getElementById('totalIPs').textContent = data.total_ips_in_db?.toLocaleString() || '0';
+                document.getElementById('totalSubnets').textContent = data.total_subnets?.toLocaleString() || '0';
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        // Handle file selection
+        function handleFileSelect(input, displayId) {
+            const file = input.files[0];
+            const display = document.getElementById(displayId);
+            
+            if (file) {
+                display.textContent = `Selected: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+                display.classList.remove('hidden');
+            } else {
+                display.classList.add('hidden');
+            }
+        }
+
+        // Download sample files
+        async function downloadSample(type) {
+            try {
+                const response = await fetch(`/api/download-sample-csv/${type}`);
+                const blob = await response.blob();
+                
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `sample_${type}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('Error downloading sample file: ' + error.message);
+            }
+        }
+
+        // Handle form submissions
+        document.getElementById('ipImportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await handleImport(e.target, 'ip_inventory');
+        });
+
+        document.getElementById('subnetImportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await handleImport(e.target, 'subnets');
+        });
+
+        async function handleImport(form, type) {
+            const formData = new FormData(form);
+            formData.append('type', type);
+            
+            const submitButton = form.querySelector('button[type="submit"]');
+            const originalText = submitButton.innerHTML;
+            
+            try {
+                submitButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Importing...';
+                submitButton.disabled = true;
+                
+                const response = await fetch('/api/import-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    if (result.statistics.conflicts && result.statistics.conflicts.length > 0) {
+                        currentConflicts = result.statistics.conflicts;
+                        showConflictsModal(result.statistics.conflicts);
+                    } else {
+                        showImportResults(result);
+                        form.reset();
+                        // Reset file display
+                        form.querySelectorAll('[id$="FileName"]').forEach(el => el.classList.add('hidden'));
+                        loadCurrentStats(); // Refresh stats
+                    }
+                } else {
+                    showImportResults(result);
+                }
+                
+            } catch (error) {
+                showImportResults({
+                    success: false,
+                    error: 'Import failed: ' + error.message
+                });
+            } finally {
+                submitButton.innerHTML = originalText;
+                submitButton.disabled = false;
+            }
+        }
+
+        function showImportResults(result) {
+            const resultsDiv = document.getElementById('importResults');
+            const contentDiv = document.getElementById('resultsContent');
+            
+            let html = '';
+            
+            if (result.success) {
+                html = `
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                        <div class="flex items-center">
+                            <i class="fas fa-check-circle text-green-600 text-xl mr-3"></i>
+                            <div>
+                                <h4 class="text-green-800 font-semibold">Import Successful!</h4>
+                                <p class="text-green-700">${result.message}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                if (result.statistics) {
+                    html += `
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                            <div class="bg-blue-50 rounded-lg p-4 text-center">
+                                <div class="text-2xl font-bold text-blue-600">${result.statistics.total_rows}</div>
+                                <div class="text-sm text-blue-700">Total Rows</div>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-4 text-center">
+                                <div class="text-2xl font-bold text-green-600">${result.statistics.new_records}</div>
+                                <div class="text-sm text-green-700">New Records</div>
+                            </div>
+                            <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                                <div class="text-2xl font-bold text-yellow-600">${result.statistics.updated_records}</div>
+                                <div class="text-sm text-yellow-700">Updated</div>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-4 text-center">
+                                <div class="text-2xl font-bold text-gray-600">${result.statistics.skipped}</div>
+                                <div class="text-sm text-gray-700">Skipped</div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                if (result.statistics && result.statistics.errors && result.statistics.errors.length > 0) {
+                    html += `
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <h5 class="text-red-800 font-semibold mb-2">Errors:</h5>
+                            <ul class="text-red-700 text-sm space-y-1">
+                                ${result.statistics.errors.map(error => `<li>• ${error}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+            } else {
+                html = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div class="flex items-center">
+                            <i class="fas fa-exclamation-triangle text-red-600 text-xl mr-3"></i>
+                            <div>
+                                <h4 class="text-red-800 font-semibold">Import Failed</h4>
+                                <p class="text-red-700">${result.error}</p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            contentDiv.innerHTML = html;
+            resultsDiv.classList.remove('hidden');
+            
+            // Scroll to results
+            resultsDiv.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showConflictsModal(conflicts) {
+            currentConflicts = conflicts;
+            const modal = document.getElementById('conflictsModal');
+            const conflictsList = document.getElementById('conflictsList');
+            
+            let html = '';
+            
+            conflicts.forEach((conflict, index) => {
+                html += `
+                    <div class="border border-gray-200 rounded-lg p-4 mb-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="font-semibold text-gray-800">
+                                Conflict ${index + 1}: ${conflict.ip_address || conflict.subnet}
+                            </h4>
+                            <span class="text-sm text-gray-500">Row ${conflict.row_num}</span>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div class="bg-blue-50 rounded-lg p-3">
+                                <h5 class="font-medium text-blue-800 mb-2">Existing Data</h5>
+                                ${Object.entries(conflict.existing_data).map(([key, value]) => 
+                                    `<div class="text-sm"><span class="font-medium">${key}:</span> ${value || '(empty)'}</div>`
+                                ).join('')}
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-3">
+                                <h5 class="font-medium text-green-800 mb-2">New Data</h5>
+                                ${Object.entries(conflict.new_data).map(([key, value]) => 
+                                    `<div class="text-sm"><span class="font-medium">${key}:</span> ${value || '(empty)'}</div>`
+                                ).join('')}
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <h5 class="font-medium text-gray-700 mb-2">Differences:</h5>
+                            <ul class="text-sm text-gray-600 space-y-1">
+                                ${conflict.differences.map(diff => 
+                                    `<li>• <strong>${diff.field}:</strong> "${diff.old_value}" → "${diff.new_value}"</li>`
+                                ).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div class="flex space-x-3">
+                            <label class="flex items-center">
+                                <input type="radio" name="conflict_${index}" value="keep_old" class="mr-2" checked>
+                                <span class="text-sm">Keep existing data</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="conflict_${index}" value="use_new" class="mr-2">
+                                <span class="text-sm">Use new data</span>
+                            </label>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            conflictsList.innerHTML = html;
+            modal.classList.remove('hidden');
+        }
+
+        function closeConflictsModal() {
+            document.getElementById('conflictsModal').classList.add('hidden');
+        }
+
+        async function resolveAllConflicts() {
+            const resolutions = {};
+            
+            currentConflicts.forEach((conflict, index) => {
+                const selectedOption = document.querySelector(`input[name="conflict_${index}"]:checked`);
+                if (selectedOption) {
+                    resolutions[index] = selectedOption.value;
+                }
+            });
+            
+            try {
+                const response = await fetch('/api/resolve-conflicts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        conflicts: currentConflicts,
+                        resolutions: resolutions
+                    })
+                });
+                
+                const result = await response.json();
+                
+                closeConflictsModal();
+                showImportResults(result);
+                loadCurrentStats(); // Refresh stats
+                
+            } catch (error) {
+                alert('Error resolving conflicts: ' + error.message);
+            }
+        }
+
+        // Load stats on page load
+        document.addEventListener('DOMContentLoaded', loadCurrentStats);
+    </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+ip_address,subnet,hostname,vrf_vpn,description,status
+192.168.1.1,192.168.1.0/24,gateway-router,CORP-VRF,Main gateway for corporate network,used
+192.168.1.10,192.168.1.0/24,web-server-01,CORP-VRF,Primary web server,used
+192.168.1.11,192.168.1.0/24,web-server-02,CORP-VRF,Secondary web server,used
+192.168.1.20,192.168.1.0/24,db-server-01,DB-VRF,Primary database server,used
+192.168.1.21,192.168.1.0/24,db-server-02,DB-VRF,Secondary database server,used
+192.168.1.50,192.168.1.0/24,,CORP-VRF,Reserved for future use,reserved
+192.168.1.51,192.168.1.0/24,,CORP-VRF,Reserved for future use,reserved
+192.168.1.100,192.168.1.0/24,,CORP-VRF,,available
+192.168.1.101,192.168.1.0/24,,CORP-VRF,,available
+192.168.1.102,192.168.1.0/24,,CORP-VRF,,available
+10.0.1.1,10.0.1.0/24,core-switch,MGMT-VRF,Core network switch,used
+10.0.1.10,10.0.1.0/24,firewall-01,MGMT-VRF,Primary firewall,used
+10.0.1.11,10.0.1.0/24,firewall-02,MGMT-VRF,Secondary firewall,used
+10.0.1.20,10.0.1.0/24,monitor-server,MGMT-VRF,Network monitoring server,used
+10.0.1.100,10.0.1.0/24,,MGMT-VRF,,available
+172.16.10.1,172.16.10.0/24,dmz-gateway,DMZ-VRF,DMZ gateway,used
+172.16.10.10,172.16.10.0/24,public-web,DMZ-VRF,Public web server,used
+172.16.10.11,172.16.10.0/24,mail-server,DMZ-VRF,Mail server,used
+172.16.10.50,172.16.10.0/24,,DMZ-VRF,Reserved for load balancer,reserved
+172.16.10.100,172.16.10.0/24,,DMZ-VRF,,available

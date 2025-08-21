@@ -1,0 +1,9 @@
+subnet,description,section,vlan,device,vrf,customer,location,nameservers,threshold_percentage
+192.168.1.0/24,Corporate LAN Network,CORPORATE,VLAN100,Core-Switch-01,CORP-VRF,Internal IT,Building A Floor 1,"8.8.8.8,8.8.4.4",80
+10.0.1.0/24,Management Network,MANAGEMENT,VLAN10,Mgmt-Switch-01,MGMT-VRF,Network Operations,Server Room A,"10.0.1.1,10.0.1.2",75
+172.16.10.0/24,DMZ Network,DMZ,VLAN200,DMZ-Switch-01,DMZ-VRF,External Services,Data Center,"172.16.10.1,8.8.8.8",85
+192.168.10.0/24,Guest WiFi Network,GUEST,VLAN300,Guest-AP-01,GUEST-VRF,Guest Users,Building A Lobby,"8.8.8.8,1.1.1.1",90
+10.10.0.0/24,Server Farm Network,SERVERS,VLAN400,Server-Switch-01,SERVER-VRF,Production Servers,Data Center,"10.10.0.1,10.10.0.2",70
+172.31.0.0/24,IoT Devices Network,IOT,VLAN500,IoT-Gateway-01,IOT-VRF,IoT Devices,Building B,"172.31.0.1,8.8.8.8",95
+192.168.50.0/24,Development Network,DEVELOPMENT,VLAN600,Dev-Switch-01,DEV-VRF,Development Team,Building A Floor 2,"192.168.50.1,8.8.8.8",80
+10.20.0.0/24,Backup Network,BACKUP,VLAN700,Backup-Switch-01,BACKUP-VRF,Backup Systems,Server Room B,"10.20.0.1,10.20.0.2",60

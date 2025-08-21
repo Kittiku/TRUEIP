@@ -4,16 +4,29 @@ Simple IP Address Management System
 Only IP Management functionality
 """
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
 import mysql.connector
 from mysql.connector import Error
 import json
 import ipaddress
 from datetime import datetime
-from datetime import datetime
-import ipaddress
+import csv
+import io
+from werkzeug.utils import secure_filename
+import os
 
 app = Flask(__name__)
+
+# Configuration for file uploads
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+ALLOWED_EXTENSIONS = {'csv'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# Ensure upload directory exists
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Database Configuration
 DB_CONFIG = {
@@ -281,6 +294,11 @@ def index():
     """Advanced IP Management Homepage"""
     return render_template('ip_management_clean.html')
 
+@app.route('/csv-import')
+def csv_import_page():
+    """CSV Import page"""
+    return render_template('csv_import.html')
+
 @app.route('/ip-management')
 def ip_management():
     """Advanced IP Management page"""
@@ -379,8 +397,8 @@ def api_ip_data():
 
 @app.route('/api/statistics')
 def api_statistics():
-    """API to get statistics with accurate available IP calculation"""
-    print("📊 Getting accurate statistics...")
+    """API to get statistics with REAL calculation from actual subnet data"""
+    print("📊 Getting REAL statistics from subnet data...")
     
     try:
         connection = get_db_connection()
@@ -389,66 +407,94 @@ def api_statistics():
             
         cursor = connection.cursor(dictionary=True)
         
-        # Get status counts from existing data
+        # Get REAL usage data from each subnet
         cursor.execute("""
             SELECT 
-                status,
-                COUNT(*) as count
-            FROM ip_inventory 
-            WHERE status IN ('used', 'available', 'reserved')
-            GROUP BY status
-        """)
-        status_counts = {row['status']: row['count'] for row in cursor.fetchall()}
-        
-        # Get all unique subnets with their CIDR
-        cursor.execute("""
-            SELECT DISTINCT subnet 
+                subnet,
+                COUNT(*) as total_records,
+                COUNT(CASE WHEN hostname != '' AND hostname IS NOT NULL THEN 1 END) as actual_used_count,
+                COUNT(CASE WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 1 END) as actual_reserved_count,
+                COUNT(CASE WHEN (hostname = '' OR hostname IS NULL) AND (description NOT LIKE '%reserved%' OR description IS NULL) THEN 1 END) as actual_available_count
             FROM ip_inventory 
             WHERE subnet IS NOT NULL AND subnet != ''
+            GROUP BY subnet
         """)
-        subnets = [row['subnet'] for row in cursor.fetchall()]
         
-        # Calculate total possible IPs and actual available IPs
+        subnet_data = cursor.fetchall()
+        
+        # Calculate REAL totals from subnet sizes and actual usage
         total_possible_ips = 0
-        used_ips_count = status_counts.get('used', 0)
-        reserved_ips_count = status_counts.get('reserved', 0)
+        total_used_ips = 0
+        total_reserved_ips = 0
+        total_available_ips = 0
         
-        for subnet in subnets:
+        for row in subnet_data:
+            subnet = row['subnet']
+            actual_used = row['actual_used_count'] or 0
+            actual_reserved = row['actual_reserved_count'] or 0
+            
             try:
-                import ipaddress
+                # Calculate actual subnet capacity
                 network = ipaddress.IPv4Network(subnet, strict=False)
-                # Get number of host IPs (excluding network and broadcast)
-                possible_hosts = network.num_addresses - 2  # -2 for network and broadcast
-                if possible_hosts > 0:
-                    total_possible_ips += possible_hosts
-            except:
+                
+                # Handle different subnet sizes
+                if network.prefixlen >= 31:
+                    subnet_capacity = network.num_addresses  # /31 and /32 can use all IPs
+                else:
+                    subnet_capacity = network.num_addresses - 2  # Exclude network and broadcast
+                
+                if subnet_capacity <= 0:
+                    continue
+                
+                # Calculate real available IPs for this subnet
+                used_ips_in_subnet = actual_used
+                reserved_ips_in_subnet = actual_reserved
+                available_ips_in_subnet = subnet_capacity - used_ips_in_subnet - reserved_ips_in_subnet
+                
+                # Ensure no negative values
+                if available_ips_in_subnet < 0:
+                    available_ips_in_subnet = 0
+                
+                # Add to totals
+                total_possible_ips += subnet_capacity
+                total_used_ips += used_ips_in_subnet
+                total_reserved_ips += reserved_ips_in_subnet
+                total_available_ips += available_ips_in_subnet
+                
+                print(f"📋 Subnet {subnet}: Capacity={subnet_capacity}, Used={used_ips_in_subnet}, Available={available_ips_in_subnet}")
+                    
+            except Exception as e:
+                print(f"❌ Error processing subnet {subnet}: {e}")
                 continue
         
-        # Calculate actual available IPs
-        actual_available_ips = total_possible_ips - used_ips_count - reserved_ips_count
-        
         # Get total subnets count
-        total_subnets = len(subnets)
+        total_subnets = len(subnet_data)
         
-        # Get Service Domain counts
+        # Get VRF counts
         cursor.execute("SELECT COUNT(DISTINCT vrf_vpn) as count FROM ip_inventory WHERE vrf_vpn IS NOT NULL AND vrf_vpn != ''")
         total_vrfs = cursor.fetchone()['count']
+        
+        # Get total records in database
+        cursor.execute("SELECT COUNT(*) as total FROM ip_inventory")
+        total_records = cursor.fetchone()['total']
         
         cursor.close()
         connection.close()
         
         stats = {
             'total_possible_ips': total_possible_ips,
-            'used_ips': used_ips_count,
-            'available_ips': actual_available_ips,
-            'reserved_ips': reserved_ips_count,
-            'total_ips_in_db': sum(status_counts.values()),
+            'used_ips': total_used_ips,
+            'available_ips': total_available_ips,
+            'reserved_ips': total_reserved_ips,
+            'total_ips_in_db': total_records,
             'total_subnets': total_subnets,
             'total_vrfs': total_vrfs,
-            'utilization_percentage': round((used_ips_count / total_possible_ips * 100), 2) if total_possible_ips > 0 else 0
+            'utilization_percentage': round((total_used_ips / total_possible_ips * 100), 2) if total_possible_ips > 0 else 0,
+            'calculation_method': 'Real subnet-based calculation'
         }
         
-        print(f"📊 Accurate Stats: Total Possible={total_possible_ips}, Used={used_ips_count}, Available={actual_available_ips}")
+        print(f"📊 REAL Stats: Possible={total_possible_ips}, Used={total_used_ips}, Available={total_available_ips}, Reserved={total_reserved_ips}")
+        print(f"📊 Utilization: {stats['utilization_percentage']}%")
         return jsonify(stats)
         
     except Error as e:
@@ -2101,7 +2147,7 @@ def ip_auto_allocation():
 
 @app.route('/api/ip-data')
 def get_ip_data():
-    """Get IP data by status for dashboard modals"""
+    """Get IP data by ACTUAL status for dashboard modals"""
     status = request.args.get('status', 'available')
     limit = int(request.args.get('limit', 100))
     format_type = request.args.get('format', 'json')
@@ -2109,21 +2155,28 @@ def get_ip_data():
     try:
         cursor = mysql_connection.cursor(dictionary=True)
         
-        # Define status conditions
-        status_conditions = {
-            'available': "hostname = ''",
-            'used': "hostname != ''",
-            'reserved': "ip_address LIKE '%reserved%' OR description LIKE '%reserved%'"
-        }
-        
-        condition = status_conditions.get(status, "1=1")
+        # Define REAL status conditions based on actual data
+        if status == 'available':
+            condition = "(hostname = '' OR hostname IS NULL) AND (description NOT LIKE '%reserved%' OR description IS NULL)"
+        elif status == 'used':
+            condition = "hostname != '' AND hostname IS NOT NULL"
+        elif status == 'reserved':
+            condition = "(hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%'"
+        else:
+            condition = "1=1"  # All records
         
         query = f"""
-        SELECT ip_address, hostname, vrf_vpn, description,
-               (SELECT subnet FROM subnets s WHERE INET_ATON(ip.ip_address) 
-                BETWEEN INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) 
-                AND INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) + POW(2, 32-SUBSTRING_INDEX(s.subnet, '/', -1)) - 1
-                LIMIT 1) as subnet
+        SELECT 
+            ip_address, 
+            hostname, 
+            vrf_vpn, 
+            description,
+            subnet,
+            CASE 
+                WHEN hostname != '' AND hostname IS NOT NULL THEN 'Used'
+                WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 'Reserved'
+                ELSE 'Available'
+            END as actual_status
         FROM ip_inventory ip
         WHERE {condition}
         ORDER BY INET_ATON(ip_address)
@@ -2136,50 +2189,191 @@ def get_ip_data():
         if format_type == 'csv':
             # Return CSV format
             output = []
-            output.append('IP Address,Hostname,VRF,Description,Subnet')
+            output.append('IP Address,Hostname,VRF,Description,Subnet,Status')
             for row in data:
-                output.append(f"{row['ip_address']},{row['hostname'] or ''},{row['vrf_vpn'] or ''},{row['description'] or ''},{row['subnet'] or ''}")
+                output.append(f"{row['ip_address']},{row['hostname'] or ''},{row['vrf_vpn'] or ''},{row['description'] or ''},{row['subnet'] or ''},{row['actual_status']}")
             
             response = make_response('\n'.join(output))
             response.headers['Content-Type'] = 'text/csv'
-            response.headers['Content-Disposition'] = f'attachment; filename={status}_ips.csv'
+            response.headers['Content-Disposition'] = f'attachment; filename={status}_ips_real_data.csv'
             return response
         
-        return jsonify({'data': data, 'count': len(data)})
+        return jsonify({'data': data, 'count': len(data), 'calculation_method': 'Real data based on hostnames'})
         
     except Exception as e:
+        print(f"❌ Error getting IP data: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/subnets-overview')
 def get_subnets_overview():
-    """Get subnet overview for dashboard modal"""
+    """Get subnet overview with REAL calculation from actual data"""
     try:
         cursor = mysql_connection.cursor(dictionary=True)
         
-        # Get subnet information with utilization
+        # Get REAL subnet information with actual usage calculation
         query = """
         SELECT 
             s.subnet,
             s.description,
-            s.vrf_vpn,
-            POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2 as total_ips,
-            COUNT(CASE WHEN ip.hostname != '' THEN 1 END) as used_ips,
-            POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2 - COUNT(CASE WHEN ip.hostname != '' THEN 1 END) as available_ips,
-            ROUND((COUNT(CASE WHEN ip.hostname != '' THEN 1 END) / (POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2)) * 100, 2) as utilization
+            s.vrf as vrf_vpn,
+            -- Count actual used IPs (those with hostnames)
+            COUNT(CASE WHEN ip.hostname != '' AND ip.hostname IS NOT NULL THEN 1 END) as actual_used_ips,
+            -- Count actual reserved IPs 
+            COUNT(CASE WHEN (ip.hostname = '' OR ip.hostname IS NULL) AND ip.description LIKE '%reserved%' THEN 1 END) as actual_reserved_ips
         FROM subnets s
         LEFT JOIN ip_inventory ip ON (
             INET_ATON(ip.ip_address) BETWEEN 
             INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) + 1 AND 
             INET_ATON(SUBSTRING_INDEX(s.subnet, '/', 1)) + POWER(2, 32 - SUBSTRING_INDEX(s.subnet, '/', -1)) - 2
         )
-        GROUP BY s.subnet, s.description, s.vrf_vpn
-        ORDER BY utilization DESC
+        GROUP BY s.subnet, s.description, s.vrf
+        ORDER BY s.subnet
         """
         
         cursor.execute(query)
-        subnets = cursor.fetchall()
+        subnet_results = cursor.fetchall()
         
-        return jsonify({'subnets': subnets})
+        # Process each subnet to calculate real capacity and availability
+        processed_subnets = []
+        
+        for row in subnet_results:
+            subnet_cidr = row['subnet']
+            actual_used = row['actual_used_ips'] or 0
+            actual_reserved = row['actual_reserved_ips'] or 0
+            
+            try:
+                # Calculate real subnet capacity
+                network = ipaddress.IPv4Network(subnet_cidr, strict=False)
+                
+                if network.prefixlen >= 31:
+                    total_capacity = network.num_addresses  # /31 and /32 use all IPs
+                else:
+                    total_capacity = network.num_addresses - 2  # Exclude network and broadcast
+                
+                # Calculate real available IPs
+                real_available_ips = total_capacity - actual_used - actual_reserved
+                if real_available_ips < 0:
+                    real_available_ips = 0
+                
+                # Calculate real utilization
+                real_utilization = round((actual_used / total_capacity * 100), 2) if total_capacity > 0 else 0
+                
+                processed_subnet = {
+                    'subnet': subnet_cidr,
+                    'description': row['description'] or '',
+                    'vrf_vpn': row['vrf_vpn'] or '',
+                    'total_ips': total_capacity,
+                    'used_ips': actual_used,
+                    'reserved_ips': actual_reserved,
+                    'available_ips': real_available_ips,
+                    'utilization': real_utilization
+                }
+                
+                processed_subnets.append(processed_subnet)
+                
+            except Exception as e:
+                print(f"❌ Error processing subnet {subnet_cidr}: {e}")
+                # Add with default values if calculation fails
+                processed_subnets.append({
+                    'subnet': subnet_cidr,
+                    'description': row['description'] or '',
+                    'vrf_vpn': row['vrf_vpn'] or '',
+                    'total_ips': 0,
+                    'used_ips': actual_used,
+                    'reserved_ips': actual_reserved,
+                    'available_ips': 0,
+                    'utilization': 0
+                })
+        
+        # Sort by utilization descending
+        processed_subnets.sort(key=lambda x: x['utilization'], reverse=True)
+        
+        return jsonify({'subnets': processed_subnets})
+        
+    except Exception as e:
+        print(f"❌ Error getting subnets overview: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/calculation-comparison')
+def calculation_comparison():
+    """Compare old vs new calculation methods"""
+    try:
+        cursor = mysql_connection.cursor(dictionary=True)
+        
+        # OLD METHOD - Based on status column
+        cursor.execute("""
+            SELECT 
+                status,
+                COUNT(*) as count
+            FROM ip_inventory 
+            WHERE status IN ('used', 'available', 'reserved')
+            GROUP BY status
+        """)
+        old_status_counts = {row['status']: row['count'] for row in cursor.fetchall()}
+        
+        # NEW METHOD - Based on actual hostname data
+        cursor.execute("""
+            SELECT 
+                CASE 
+                    WHEN hostname != '' AND hostname IS NOT NULL THEN 'used'
+                    WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 'reserved'
+                    ELSE 'available'
+                END as real_status,
+                COUNT(*) as count
+            FROM ip_inventory 
+            GROUP BY real_status
+        """)
+        new_status_counts = {row['real_status']: row['count'] for row in cursor.fetchall()}
+        
+        # Calculate subnet-based totals
+        cursor.execute("""
+            SELECT DISTINCT subnet 
+            FROM ip_inventory 
+            WHERE subnet IS NOT NULL AND subnet != ''
+        """)
+        subnets = [row['subnet'] for row in cursor.fetchall()]
+        
+        total_possible_from_subnets = 0
+        for subnet in subnets:
+            try:
+                network = ipaddress.IPv4Network(subnet, strict=False)
+                if network.prefixlen >= 31:
+                    capacity = network.num_addresses
+                else:
+                    capacity = network.num_addresses - 2
+                total_possible_from_subnets += capacity
+            except:
+                continue
+        
+        comparison = {
+            'old_method': {
+                'description': 'Based on status column in database',
+                'used': old_status_counts.get('used', 0),
+                'available': old_status_counts.get('available', 0),
+                'reserved': old_status_counts.get('reserved', 0),
+                'total_in_db': sum(old_status_counts.values())
+            },
+            'new_method': {
+                'description': 'Based on actual hostname and description data',
+                'used': new_status_counts.get('used', 0),
+                'available': new_status_counts.get('available', 0),
+                'reserved': new_status_counts.get('reserved', 0),
+                'total_in_db': sum(new_status_counts.values())
+            },
+            'subnet_analysis': {
+                'total_possible_ips_from_subnets': total_possible_from_subnets,
+                'total_records_in_db': sum(new_status_counts.values()),
+                'coverage_percentage': round((sum(new_status_counts.values()) / total_possible_from_subnets * 100), 2) if total_possible_from_subnets > 0 else 0
+            },
+            'recommendations': [
+                '✅ ใช้การคำนวณแบบใหม่ที่ดูจาก hostname จริง',
+                '📊 คำนวณ available IPs จากขนาด subnet จริง ลบ used IPs',
+                '🔍 ตรวจสอบว่า IP ทั้งหมดใน subnet มีข้อมูลใน database หรือไม่',
+                '⚠️ ถ้า coverage น้อยกว่า 100% แสดงว่ายังมี IP ในบาง subnet ที่ยังไม่ได้ import'
+            ]
+        }
+        
+        return jsonify(comparison)
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2210,6 +2404,487 @@ def get_vrf_distribution():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/import-csv', methods=['POST'])
+def import_csv_data():
+    """Import CSV data with duplicate detection and conflict resolution"""
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    import_type = request.form.get('type', 'ip_inventory')  # 'ip_inventory' or 'subnets'
+    conflict_strategy = request.form.get('conflict_strategy', 'ask')  # 'ask', 'keep_old', 'use_new'
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Only CSV files are allowed'}), 400
+    
+    try:
+        # Read CSV content
+        stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+        csv_input = csv.DictReader(stream)
+        
+        # Parse and validate data
+        if import_type == 'ip_inventory':
+            result = process_ip_inventory_csv(csv_input, conflict_strategy)
+        elif import_type == 'subnets':
+            result = process_subnets_csv(csv_input, conflict_strategy)
+        else:
+            return jsonify({'error': 'Invalid import type'}), 400
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"❌ Error importing CSV: {e}")
+        return jsonify({'error': f'Import failed: {str(e)}'}), 500
+
+def process_ip_inventory_csv(csv_data, conflict_strategy):
+    """Process IP inventory CSV data with conflict detection"""
+    
+    connection = get_db_connection()
+    if not connection:
+        return {'error': 'Database connection failed'}
+    
+    cursor = connection.cursor(dictionary=True)
+    
+    # Statistics
+    stats = {
+        'total_rows': 0,
+        'new_records': 0,
+        'updated_records': 0,
+        'conflicts': [],
+        'errors': [],
+        'skipped': 0
+    }
+    
+    # Required columns for IP inventory
+    required_columns = ['ip_address']
+    optional_columns = ['subnet', 'hostname', 'vrf_vpn', 'description', 'status']
+    
+    try:
+        for row_num, row in enumerate(csv_data, start=2):  # Start from 2 (accounting for header)
+            stats['total_rows'] += 1
+            
+            # Validate required columns
+            if not all(col in row for col in required_columns):
+                stats['errors'].append(f"Row {row_num}: Missing required columns {required_columns}")
+                continue
+            
+            ip_address = row['ip_address'].strip()
+            
+            # Validate IP address
+            try:
+                ipaddress.ip_address(ip_address)
+            except ValueError:
+                stats['errors'].append(f"Row {row_num}: Invalid IP address '{ip_address}'")
+                continue
+            
+            # Check if IP already exists
+            cursor.execute("SELECT * FROM ip_inventory WHERE ip_address = %s", (ip_address,))
+            existing_record = cursor.fetchone()
+            
+            # Prepare data for insertion/update
+            data = {
+                'ip_address': ip_address,
+                'subnet': row.get('subnet', '').strip(),
+                'hostname': row.get('hostname', '').strip(),
+                'vrf_vpn': row.get('vrf_vpn', '').strip(),
+                'description': row.get('description', '').strip(),
+                'status': row.get('status', 'available').strip()
+            }
+            
+            if existing_record:
+                # Handle conflict
+                conflict_info = {
+                    'row_num': row_num,
+                    'ip_address': ip_address,
+                    'existing_data': existing_record,
+                    'new_data': data,
+                    'differences': []
+                }
+                
+                # Find differences
+                for key in data:
+                    if key in existing_record and str(existing_record[key]) != str(data[key]):
+                        conflict_info['differences'].append({
+                            'field': key,
+                            'old_value': existing_record[key],
+                            'new_value': data[key]
+                        })
+                
+                if conflict_info['differences']:
+                    if conflict_strategy == 'ask':
+                        conflict_info['action'] = 'pending'
+                        stats['conflicts'].append(conflict_info)
+                        continue
+                    elif conflict_strategy == 'keep_old':
+                        stats['skipped'] += 1
+                        continue
+                    elif conflict_strategy == 'use_new':
+                        # Update existing record
+                        update_query = """
+                        UPDATE ip_inventory 
+                        SET subnet = %s, hostname = %s, vrf_vpn = %s, description = %s, status = %s, updated_at = NOW()
+                        WHERE ip_address = %s
+                        """
+                        cursor.execute(update_query, (
+                            data['subnet'], data['hostname'], data['vrf_vpn'], 
+                            data['description'], data['status'], ip_address
+                        ))
+                        stats['updated_records'] += 1
+                else:
+                    # No differences, skip
+                    stats['skipped'] += 1
+            else:
+                # Insert new record
+                insert_query = """
+                INSERT INTO ip_inventory (ip_address, subnet, hostname, vrf_vpn, description, status)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(insert_query, (
+                    data['ip_address'], data['subnet'], data['hostname'], 
+                    data['vrf_vpn'], data['description'], data['status']
+                ))
+                stats['new_records'] += 1
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+        return {
+            'success': True,
+            'message': f'Import completed. {stats["new_records"]} new records, {stats["updated_records"]} updated, {stats["skipped"]} skipped',
+            'statistics': stats
+        }
+        
+    except Exception as e:
+        connection.rollback()
+        cursor.close()
+        connection.close()
+        return {'error': f'Database error: {str(e)}'}
+
+def process_subnets_csv(csv_data, conflict_strategy):
+    """Process subnets CSV data with conflict detection"""
+    
+    connection = get_db_connection()
+    if not connection:
+        return {'error': 'Database connection failed'}
+    
+    cursor = connection.cursor(dictionary=True)
+    
+    # Statistics
+    stats = {
+        'total_rows': 0,
+        'new_records': 0,
+        'updated_records': 0,
+        'conflicts': [],
+        'errors': [],
+        'skipped': 0
+    }
+    
+    # Required columns for subnets
+    required_columns = ['subnet']
+    optional_columns = ['description', 'section', 'vlan', 'device', 'vrf', 'customer', 'location', 'nameservers', 'threshold_percentage']
+    
+    try:
+        for row_num, row in enumerate(csv_data, start=2):
+            stats['total_rows'] += 1
+            
+            # Validate required columns
+            if not all(col in row for col in required_columns):
+                stats['errors'].append(f"Row {row_num}: Missing required columns {required_columns}")
+                continue
+            
+            subnet = row['subnet'].strip()
+            
+            # Validate subnet
+            try:
+                ipaddress.ip_network(subnet, strict=False)
+            except ValueError:
+                stats['errors'].append(f"Row {row_num}: Invalid subnet '{subnet}'")
+                continue
+            
+            # Check if subnet already exists
+            cursor.execute("SELECT * FROM subnets WHERE subnet = %s", (subnet,))
+            existing_record = cursor.fetchone()
+            
+            # Prepare data for insertion/update
+            data = {
+                'subnet': subnet,
+                'description': row.get('description', '').strip(),
+                'section': row.get('section', '').strip(),
+                'vlan': row.get('vlan', '').strip(),
+                'device': row.get('device', '').strip(),
+                'vrf': row.get('vrf', '').strip(),
+                'customer': row.get('customer', '').strip(),
+                'location': row.get('location', '').strip(),
+                'nameservers': row.get('nameservers', '').strip(),
+                'threshold_percentage': int(row.get('threshold_percentage', 80)) if row.get('threshold_percentage', '').isdigit() else 80
+            }
+            
+            if existing_record:
+                # Handle conflict
+                conflict_info = {
+                    'row_num': row_num,
+                    'subnet': subnet,
+                    'existing_data': existing_record,
+                    'new_data': data,
+                    'differences': []
+                }
+                
+                # Find differences
+                for key in data:
+                    if key in existing_record and str(existing_record[key]) != str(data[key]):
+                        conflict_info['differences'].append({
+                            'field': key,
+                            'old_value': existing_record[key],
+                            'new_value': data[key]
+                        })
+                
+                if conflict_info['differences']:
+                    if conflict_strategy == 'ask':
+                        conflict_info['action'] = 'pending'
+                        stats['conflicts'].append(conflict_info)
+                        continue
+                    elif conflict_strategy == 'keep_old':
+                        stats['skipped'] += 1
+                        continue
+                    elif conflict_strategy == 'use_new':
+                        # Update existing record
+                        update_query = """
+                        UPDATE subnets 
+                        SET description = %s, section = %s, vlan = %s, device = %s, vrf = %s, 
+                            customer = %s, location = %s, nameservers = %s, threshold_percentage = %s, updated_at = NOW()
+                        WHERE subnet = %s
+                        """
+                        cursor.execute(update_query, (
+                            data['description'], data['section'], data['vlan'], data['device'], 
+                            data['vrf'], data['customer'], data['location'], data['nameservers'], 
+                            data['threshold_percentage'], subnet
+                        ))
+                        stats['updated_records'] += 1
+                else:
+                    # No differences, skip
+                    stats['skipped'] += 1
+            else:
+                # Insert new record
+                insert_query = """
+                INSERT INTO subnets (subnet, description, section, vlan, device, vrf, customer, location, nameservers, threshold_percentage)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                cursor.execute(insert_query, (
+                    data['subnet'], data['description'], data['section'], data['vlan'], 
+                    data['device'], data['vrf'], data['customer'], data['location'], 
+                    data['nameservers'], data['threshold_percentage']
+                ))
+                stats['new_records'] += 1
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+        return {
+            'success': True,
+            'message': f'Import completed. {stats["new_records"]} new records, {stats["updated_records"]} updated, {stats["skipped"]} skipped',
+            'statistics': stats
+        }
+        
+    except Exception as e:
+        connection.rollback()
+        cursor.close()
+        connection.close()
+        return {'error': f'Database error: {str(e)}'}
+
+@app.route('/api/resolve-conflicts', methods=['POST'])
+def resolve_conflicts():
+    """Resolve CSV import conflicts with user decisions"""
+    
+    conflicts = request.json.get('conflicts', [])
+    resolutions = request.json.get('resolutions', {})  # {conflict_id: 'keep_old'|'use_new'}
+    
+    if not conflicts or not resolutions:
+        return jsonify({'error': 'No conflicts or resolutions provided'}), 400
+    
+    connection = get_db_connection()
+    if not connection:
+        return jsonify({'error': 'Database connection failed'}), 500
+    
+    cursor = connection.cursor()
+    
+    stats = {
+        'updated_records': 0,
+        'skipped_records': 0,
+        'errors': []
+    }
+    
+    try:
+        for i, conflict in enumerate(conflicts):
+            resolution = resolutions.get(str(i))
+            
+            if resolution == 'use_new':
+                # Update with new data
+                if 'ip_address' in conflict['new_data']:
+                    # IP inventory update
+                    data = conflict['new_data']
+                    update_query = """
+                    UPDATE ip_inventory 
+                    SET subnet = %s, hostname = %s, vrf_vpn = %s, description = %s, status = %s, updated_at = NOW()
+                    WHERE ip_address = %s
+                    """
+                    cursor.execute(update_query, (
+                        data['subnet'], data['hostname'], data['vrf_vpn'], 
+                        data['description'], data['status'], data['ip_address']
+                    ))
+                elif 'subnet' in conflict['new_data']:
+                    # Subnets update
+                    data = conflict['new_data']
+                    update_query = """
+                    UPDATE subnets 
+                    SET description = %s, section = %s, vlan = %s, device = %s, vrf = %s, 
+                        customer = %s, location = %s, nameservers = %s, threshold_percentage = %s, updated_at = NOW()
+                    WHERE subnet = %s
+                    """
+                    cursor.execute(update_query, (
+                        data['description'], data['section'], data['vlan'], data['device'], 
+                        data['vrf'], data['customer'], data['location'], data['nameservers'], 
+                        data['threshold_percentage'], data['subnet']
+                    ))
+                
+                stats['updated_records'] += 1
+                
+            elif resolution == 'keep_old':
+                stats['skipped_records'] += 1
+            else:
+                stats['errors'].append(f"Unknown resolution '{resolution}' for conflict {i}")
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Conflicts resolved. {stats["updated_records"]} updated, {stats["skipped_records"]} skipped',
+            'statistics': stats
+        })
+        
+    except Exception as e:
+        connection.rollback()
+        cursor.close()
+        connection.close()
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+
+@app.route('/api/download-sample-csv/<data_type>')
+def download_sample_csv(data_type):
+    """Download sample CSV files"""
+    
+    if data_type == 'ip_inventory':
+        # Sample IP inventory CSV
+        sample_data = [
+            ['ip_address', 'subnet', 'hostname', 'vrf_vpn', 'description', 'status'],
+            ['192.168.1.1', '192.168.1.0/24', 'gateway-router', 'CORP-VRF', 'Main gateway for corporate network', 'used'],
+            ['192.168.1.10', '192.168.1.0/24', 'web-server-01', 'CORP-VRF', 'Primary web server', 'used'],
+            ['192.168.1.50', '192.168.1.0/24', '', 'CORP-VRF', 'Reserved for future use', 'reserved'],
+            ['192.168.1.100', '192.168.1.0/24', '', 'CORP-VRF', '', 'available']
+        ]
+        filename = 'sample_ip_inventory.csv'
+        
+    elif data_type == 'subnets':
+        # Sample subnets CSV
+        sample_data = [
+            ['subnet', 'description', 'section', 'vlan', 'device', 'vrf', 'customer', 'location', 'nameservers', 'threshold_percentage'],
+            ['192.168.1.0/24', 'Corporate LAN Network', 'CORPORATE', 'VLAN100', 'Core-Switch-01', 'CORP-VRF', 'Internal IT', 'Building A Floor 1', '8.8.8.8,8.8.4.4', '80'],
+            ['10.0.1.0/24', 'Management Network', 'MANAGEMENT', 'VLAN10', 'Mgmt-Switch-01', 'MGMT-VRF', 'Network Operations', 'Server Room A', '10.0.1.1,10.0.1.2', '75']
+        ]
+        filename = 'sample_subnets.csv'
+        
+    else:
+        return jsonify({'error': 'Invalid data type'}), 400
+    
+    # Create CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerows(sample_data)
+    
+    # Create response
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    
+    return response
+
+@app.route('/api/import-history')
+def get_import_history():
+    """Get import history and statistics"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get recent imports (last 100 records)
+        cursor.execute("""
+            SELECT 
+                ip_address,
+                hostname,
+                vrf_vpn,
+                description,
+                created_at,
+                updated_at,
+                CASE 
+                    WHEN created_at = updated_at THEN 'Imported'
+                    ELSE 'Updated'
+                END as action
+            FROM ip_inventory 
+            ORDER BY updated_at DESC 
+            LIMIT 100
+        """)
+        
+        recent_activities = cursor.fetchall()
+        
+        # Convert timestamps to strings
+        for activity in recent_activities:
+            activity['created_at'] = activity['created_at'].isoformat() if activity['created_at'] else None
+            activity['updated_at'] = activity['updated_at'].isoformat() if activity['updated_at'] else None
+        
+        # Get import statistics
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_ips,
+                COUNT(CASE WHEN hostname != '' AND hostname IS NOT NULL THEN 1 END) as used_ips,
+                COUNT(CASE WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 1 END) as reserved_ips,
+                COUNT(DISTINCT vrf_vpn) as total_vrfs,
+                COUNT(DISTINCT subnet) as total_subnets_in_ips
+            FROM ip_inventory
+        """)
+        
+        ip_stats = cursor.fetchone()
+        
+        cursor.execute("SELECT COUNT(*) as total_configured_subnets FROM subnets")
+        subnet_stats = cursor.fetchone()
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'recent_activities': recent_activities,
+            'statistics': {
+                'total_ips': ip_stats['total_ips'],
+                'used_ips': ip_stats['used_ips'],
+                'available_ips': ip_stats['total_ips'] - ip_stats['used_ips'] - ip_stats['reserved_ips'],
+                'reserved_ips': ip_stats['reserved_ips'],
+                'total_vrfs': ip_stats['total_vrfs'],
+                'total_subnets_in_ips': ip_stats['total_subnets_in_ips'],
+                'total_configured_subnets': subnet_stats['total_configured_subnets']
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Existing routes continue...
 @app.route('/api/recent-activity')
 def get_recent_activity():
     """Get recent activity data"""
