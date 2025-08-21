@@ -1647,6 +1647,439 @@ def api_delete_subnet(subnet_id):
         print(f"❌ Error deleting subnet: {e}")
         return jsonify({'error': str(e)}), 500
 
+# ================== AUTOMATED IP ALLOCATION API ==================
+@app.route('/api/suggest-ips', methods=['POST'])
+def api_suggest_ips():
+    """API to suggest available IPs in a subnet"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        subnet = data.get('subnet', '').strip()
+        count = data.get('count', 1)
+        
+        if not subnet:
+            return jsonify({'error': 'Subnet is required'}), 400
+            
+        if count < 1 or count > 100:
+            return jsonify({'error': 'Count must be between 1 and 100'}), 400
+        
+        # Validate subnet format
+        try:
+            network = ipaddress.ip_network(subnet, strict=False)
+        except ValueError:
+            return jsonify({'error': 'Invalid subnet format'}), 400
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get all used IPs in this subnet
+        cursor.execute("""
+            SELECT ip_address, status 
+            FROM ip_inventory 
+            WHERE subnet = %s
+        """, (subnet,))
+        
+        used_ips_data = cursor.fetchall()
+        used_ips = set(row['ip_address'] for row in used_ips_data)
+        
+        cursor.close()
+        connection.close()
+        
+        # Find available IPs
+        available_ips = []
+        suggested_ips = []
+        
+        for ip in network.hosts():
+            ip_str = str(ip)
+            if ip_str not in used_ips:
+                available_ips.append(ip_str)
+                
+        # Get the requested number of IPs
+        suggested_ips = available_ips[:count]
+        
+        if len(suggested_ips) < count:
+            return jsonify({
+                'warning': f'Only {len(suggested_ips)} IPs available, but {count} requested',
+                'suggested_ips': suggested_ips,
+                'available_count': len(available_ips),
+                'subnet': subnet
+            })
+        
+        return jsonify({
+            'success': True,
+            'suggested_ips': suggested_ips,
+            'available_count': len(available_ips),
+            'subnet': subnet
+        })
+        
+    except Exception as e:
+        print(f"❌ Error suggesting IPs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/bulk-reserve', methods=['POST'])
+def api_bulk_reserve():
+    """API to reserve multiple IPs at once"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        ip_list = data.get('ip_list', [])
+        subnet = data.get('subnet', '')
+        vrf_vpn = data.get('vrf_vpn', '')
+        service = data.get('service', '')
+        description = data.get('description', '')
+        
+        if not ip_list:
+            return jsonify({'error': 'IP list is required'}), 400
+            
+        if not subnet:
+            return jsonify({'error': 'Subnet is required'}), 400
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor()
+        
+        reserved_ips = []
+        failed_ips = []
+        
+        for ip in ip_list:
+            try:
+                # Validate IP format
+                ipaddress.ip_address(ip)
+                
+                # Check if IP already exists
+                cursor.execute("SELECT id FROM ip_inventory WHERE ip_address = %s", (ip,))
+                if cursor.fetchone():
+                    failed_ips.append({'ip': ip, 'reason': 'IP already exists'})
+                    continue
+                
+                # Insert new reserved IP
+                insert_query = """
+                    INSERT INTO ip_inventory 
+                    (ip_address, subnet, status, vrf_vpn, hostname, description)
+                    VALUES (%s, %s, 'reserved', %s, %s, %s)
+                """
+                
+                hostname = f"{service}-{ip.split('.')[-1]}" if service else ''
+                full_description = f"Reserved for {service}: {description}" if service else description
+                
+                cursor.execute(insert_query, (ip, subnet, vrf_vpn, hostname, full_description))
+                reserved_ips.append(ip)
+                
+            except ValueError:
+                failed_ips.append({'ip': ip, 'reason': 'Invalid IP format'})
+            except Exception as e:
+                failed_ips.append({'ip': ip, 'reason': str(e)})
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'reserved_ips': reserved_ips,
+            'failed_ips': failed_ips,
+            'total_reserved': len(reserved_ips),
+            'total_failed': len(failed_ips)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in bulk reserve: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/available-subnets')
+def api_available_subnets():
+    """API to get list of available subnets"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get all subnets with usage statistics
+        cursor.execute("""
+            SELECT 
+                subnet,
+                COUNT(*) as total_used,
+                SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_count,
+                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_count,
+                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_count
+            FROM ip_inventory 
+            WHERE subnet IS NOT NULL AND subnet != ''
+            GROUP BY subnet
+            ORDER BY subnet
+        """)
+        
+        subnet_stats = cursor.fetchall()
+        
+        # Calculate subnet capacities
+        subnets = []
+        for stats in subnet_stats:
+            subnet = stats['subnet']
+            try:
+                network = ipaddress.ip_network(subnet, strict=False)
+                total_capacity = len(list(network.hosts()))
+                used_in_db = stats['used_count'] + stats['reserved_count']
+                available_ips = total_capacity - used_in_db
+                
+                subnets.append({
+                    'subnet': subnet,
+                    'total_capacity': total_capacity,
+                    'used_count': stats['used_count'],
+                    'reserved_count': stats['reserved_count'], 
+                    'available_count': available_ips,
+                    'utilization_percent': round((used_in_db / total_capacity * 100), 2) if total_capacity > 0 else 0
+                })
+            except:
+                continue
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'subnets': subnets})
+        
+    except Exception as e:
+        print(f"❌ Error getting available subnets: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vrf-list')
+def api_vrf_list():
+    """API to get list of VRF/Service Domains"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get all unique VRF/VPN values
+        cursor.execute("""
+            SELECT DISTINCT vrf_vpn as vrf_name, COUNT(*) as ip_count
+            FROM ip_inventory 
+            WHERE vrf_vpn IS NOT NULL AND vrf_vpn != ''
+            GROUP BY vrf_vpn
+            ORDER BY vrf_vpn
+        """)
+        
+        vrfs = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'vrfs': vrfs})
+        
+    except Exception as e:
+        print(f"❌ Error getting VRF list: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/smart-subnet-recommendations')
+def api_smart_subnet_recommendations():
+    """API to get smart subnet recommendations based on requirements"""
+    try:
+        # Get parameters
+        required_ips = request.args.get('required_ips', 1, type=int)
+        service_type = request.args.get('service_type', '')
+        vrf_preference = request.args.get('vrf_preference', '')
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get all subnets with detailed analysis
+        cursor.execute("""
+            SELECT 
+                subnet,
+                COUNT(*) as total_used,
+                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_count,
+                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_count,
+                GROUP_CONCAT(DISTINCT vrf_vpn) as vrfs,
+                MAX(updated_at) as last_activity
+            FROM ip_inventory 
+            WHERE subnet IS NOT NULL AND subnet != ''
+            GROUP BY subnet
+            ORDER BY subnet
+        """)
+        
+        subnet_stats = cursor.fetchall()
+        cursor.close()
+        connection.close()
+        
+        # Analyze and score subnets
+        recommendations = []
+        
+        for stats in subnet_stats:
+            subnet = stats['subnet']
+            try:
+                import ipaddress
+                network = ipaddress.ip_network(subnet, strict=False)
+                total_capacity = len(list(network.hosts()))
+                used_in_db = stats['used_count'] + stats['reserved_count']
+                available_ips = total_capacity - used_in_db
+                
+                if available_ips < required_ips:
+                    continue  # Skip if not enough IPs
+                
+                # Calculate recommendation score
+                score = calculate_subnet_score(
+                    subnet, available_ips, total_capacity, used_in_db,
+                    stats['vrfs'], service_type, vrf_preference, 
+                    stats['last_activity'], required_ips
+                )
+                
+                recommendations.append({
+                    'subnet': subnet,
+                    'total_capacity': total_capacity,
+                    'used_count': stats['used_count'],
+                    'reserved_count': stats['reserved_count'],
+                    'available_count': available_ips,
+                    'utilization_percent': round((used_in_db / total_capacity * 100), 2),
+                    'recommendation_score': score['total_score'],
+                    'score_breakdown': score['breakdown'],
+                    'recommendation_reason': score['reason'],
+                    'vrfs': stats['vrfs'],
+                    'last_activity': stats['last_activity'].strftime('%Y-%m-%d') if stats['last_activity'] else 'Never',
+                    'network_class': get_network_class(subnet),
+                    'is_private': is_private_network(subnet)
+                })
+                
+            except Exception as e:
+                print(f"Error analyzing subnet {subnet}: {e}")
+                continue
+        
+        # Sort by recommendation score (highest first)
+        recommendations.sort(key=lambda x: x['recommendation_score'], reverse=True)
+        
+        return jsonify({
+            'recommendations': recommendations[:10],  # Top 10 recommendations
+            'total_analyzed': len(subnet_stats),
+            'meeting_requirements': len(recommendations),
+            'requirements': {
+                'required_ips': required_ips,
+                'service_type': service_type,
+                'vrf_preference': vrf_preference
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting smart recommendations: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def calculate_subnet_score(subnet, available_ips, total_capacity, used_ips, 
+                          vrfs, service_type, vrf_preference, last_activity, required_ips):
+    """Calculate recommendation score for a subnet"""
+    
+    score_breakdown = {}
+    total_score = 0
+    reasons = []
+    
+    # 1. Availability Score (40% weight)
+    availability_ratio = available_ips / total_capacity
+    if availability_ratio > 0.7:
+        availability_score = 100
+        reasons.append("High availability (>70%)")
+    elif availability_ratio > 0.5:
+        availability_score = 80
+        reasons.append("Good availability (>50%)")
+    elif availability_ratio > 0.3:
+        availability_score = 60
+        reasons.append("Moderate availability (>30%)")
+    else:
+        availability_score = 40
+        reasons.append("Limited availability")
+    
+    score_breakdown['availability'] = availability_score
+    total_score += availability_score * 0.4
+    
+    # 2. Capacity Efficiency Score (25% weight)
+    if available_ips >= required_ips * 3:
+        capacity_score = 100
+        reasons.append("Excellent capacity margin")
+    elif available_ips >= required_ips * 2:
+        capacity_score = 80
+        reasons.append("Good capacity margin")
+    elif available_ips >= required_ips * 1.5:
+        capacity_score = 60
+        reasons.append("Adequate capacity margin")
+    else:
+        capacity_score = 40
+        reasons.append("Minimal capacity margin")
+    
+    score_breakdown['capacity'] = capacity_score
+    total_score += capacity_score * 0.25
+    
+    # 3. VRF Compatibility Score (20% weight)
+    vrf_score = 50  # Default
+    if vrf_preference and vrfs:
+        if vrf_preference in vrfs:
+            vrf_score = 100
+            reasons.append("Perfect VRF match")
+        else:
+            vrf_score = 30
+            reasons.append("Different VRF domain")
+    elif not vrf_preference:
+        vrf_score = 70
+        reasons.append("No VRF preference")
+    
+    score_breakdown['vrf_compatibility'] = vrf_score
+    total_score += vrf_score * 0.2
+    
+    # 4. Network Type Score (15% weight)
+    network_score = 50
+    if is_private_network(subnet):
+        if service_type in ['web-server', 'application', 'database']:
+            network_score = 90
+            reasons.append("Private network suitable for internal services")
+        else:
+            network_score = 70
+    else:
+        if service_type in ['web-server', 'load-balancer']:
+            network_score = 90
+            reasons.append("Public network suitable for external services")
+        else:
+            network_score = 60
+    
+    score_breakdown['network_type'] = network_score
+    total_score += network_score * 0.15
+    
+    return {
+        'total_score': round(total_score, 1),
+        'breakdown': score_breakdown,
+        'reason': '; '.join(reasons[:3])  # Top 3 reasons
+    }
+
+def get_network_class(subnet):
+    """Get network class (A, B, C) for subnet"""
+    try:
+        network = ipaddress.ip_network(subnet, strict=False)
+        first_octet = int(str(network.network_address).split('.')[0])
+        
+        if 1 <= first_octet <= 126:
+            return 'Class A'
+        elif 128 <= first_octet <= 191:
+            return 'Class B'
+        elif 192 <= first_octet <= 223:
+            return 'Class C'
+        else:
+            return 'Special'
+    except:
+        return 'Unknown'
+
+def is_private_network(subnet):
+    """Check if subnet is in private IP range"""
+    try:
+        network = ipaddress.ip_network(subnet, strict=False)
+        return network.is_private
+    except:
+        return False
+
 def get_usage_color(percentage):
     """Get color based on usage percentage"""
     if percentage < 50:
@@ -1660,6 +2093,11 @@ def get_usage_color(percentage):
 def subnet_monitor():
     """Subnet Monitor Dashboard"""
     return render_template('subnet_monitor.html')
+
+@app.route('/ip-auto-allocation')
+def ip_auto_allocation():
+    """IP Auto Allocation - Smart IP Management"""
+    return render_template('ip_auto_allocation.html')
 
 if __name__ == '__main__':
     print("\n" + "="*60)

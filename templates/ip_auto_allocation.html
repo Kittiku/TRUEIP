@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IP Auto Allocation - IPAM System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        
+        .subnet-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        
+        .subnet-card.available {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .subnet-card.warning {
+            background: linear-gradient(135deg, #ffa726 0%, #ff5722 100%);
+        }
+        
+        .subnet-card.critical {
+            background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+        }
+        
+        .ip-suggestion-card {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            border: 2px dashed #3b82f6;
+        }
+        
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .step-indicator {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .step-indicator.completed {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+        }
+        
+        .step-indicator.active {
+            background: linear-gradient(45deg, #2196F3, #1976D2);
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <div class="gradient-bg text-white py-6 shadow-lg">
+        <div class="container mx-auto px-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold flex items-center">
+                        <i class="fas fa-magic mr-3"></i>
+                        IP Auto Allocation
+                    </h1>
+                    <p class="text-blue-100 mt-2">Intelligent IP address allocation and subnet management</p>
+                </div>
+                <div class="flex space-x-4">
+                    <a href="/ip-management" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-arrow-left mr-2"></i>Back to IPAM
+                    </a>
+                    <button onclick="refreshData()" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Process Steps -->
+        <div class="mb-8">
+            <div class="flex items-center justify-center space-x-4 mb-6">
+                <div class="step-indicator completed w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold">
+                    1
+                </div>
+                <div class="w-16 h-1 bg-gray-300"></div>
+                <div class="step-indicator active w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold">
+                    2
+                </div>
+                <div class="w-16 h-1 bg-gray-300"></div>
+                <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold bg-gray-300">
+                    3
+                </div>
+                <div class="w-16 h-1 bg-gray-300"></div>
+                <div class="step-indicator w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold bg-gray-300">
+                    4
+                </div>
+            </div>
+            <div class="flex justify-between text-sm text-gray-600 max-w-md mx-auto">
+                <span>Select Subnet</span>
+                <span>Set Requirements</span>
+                <span>Review Suggestions</span>
+                <span>Reserve IPs</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel - Subnet Recommendations -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
+                    <div class="flex items-center justify-between mb-6">
+                        <h2 class="text-xl font-bold text-gray-800 flex items-center">
+                            <i class="fas fa-network-wired mr-3 text-blue-500"></i>
+                            Recommended Subnets
+                        </h2>
+                        <button onclick="analyzeSubnets()" class="text-blue-500 hover:text-blue-700">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+
+                    <!-- Subnet Filter -->
+                    <div class="mb-4">
+                        <div class="relative">
+                            <input type="text" id="subnetFilter" placeholder="Search subnets..." 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pl-10">
+                            <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="subnetsLoading" class="hidden text-center py-8">
+                        <div class="loading-spinner"></div>
+                        <p class="text-gray-500 mt-2">Analyzing subnets...</p>
+                    </div>
+
+                    <!-- Subnet Recommendations List -->
+                    <div id="subnetRecommendations" class="space-y-3">
+                        <!-- Dynamic content will be loaded here -->
+                    </div>
+
+                    <!-- Quick Stats -->
+                    <div class="mt-6 pt-6 border-t border-gray-200">
+                        <div class="grid grid-cols-2 gap-4 text-center">
+                            <div class="bg-green-50 rounded-lg p-3">
+                                <div class="text-2xl font-bold text-green-600" id="availableSubnets">-</div>
+                                <div class="text-sm text-green-700">Available Subnets</div>
+                            </div>
+                            <div class="bg-blue-50 rounded-lg p-3">
+                                <div class="text-2xl font-bold text-blue-600" id="totalCapacity">-</div>
+                                <div class="text-sm text-blue-700">Total IP Capacity</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Health Indicators -->
+                        <div class="mt-4 space-y-2">
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-gray-600">Network Health:</span>
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-2 h-2 bg-green-500 rounded-full" id="healthGreen"></div>
+                                    <div class="w-2 h-2 bg-yellow-500 rounded-full" id="healthYellow"></div>
+                                    <div class="w-2 h-2 bg-red-500 rounded-full" id="healthRed"></div>
+                                    <span id="healthStatus" class="font-medium">Analyzing...</span>
+                                </div>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="overallHealthBar" class="bg-green-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Panel - IP Allocation Form -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                        <i class="fas fa-cogs mr-3 text-purple-500"></i>
+                        Allocation Settings
+                    </h2>
+
+                    <form id="allocationForm" class="space-y-6">
+                        <!-- Selected Subnet Display -->
+                        <div id="selectedSubnetDisplay" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <div class="font-semibold text-blue-800" id="selectedSubnetText">No subnet selected</div>
+                                    <div class="text-sm text-blue-600" id="selectedSubnetInfo"></div>
+                                </div>
+                                <button type="button" onclick="clearSelectedSubnet()" class="text-blue-500 hover:text-blue-700">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Manual Subnet Input -->
+                        <div id="manualSubnetInput">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-sitemap mr-2"></i>Subnet (CIDR)
+                            </label>
+                            <input type="text" id="subnet" name="subnet" 
+                                   placeholder="e.g., 192.168.1.0/24"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <p class="text-xs text-gray-500 mt-1">Enter subnet in CIDR notation or select from recommendations</p>
+                        </div>
+
+                        <!-- IP Count -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-hashtag mr-2"></i>Number of IPs Needed
+                            </label>
+                            <div class="flex space-x-2">
+                                <input type="number" id="ipCount" name="ipCount" 
+                                       min="1" max="100" value="1"
+                                       class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <div class="flex space-x-1">
+                                    <button type="button" onclick="setQuickCount(5)" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm">5</button>
+                                    <button type="button" onclick="setQuickCount(10)" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm">10</button>
+                                    <button type="button" onclick="setQuickCount(20)" class="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm">20</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- VRF/Service Domain -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-tags mr-2"></i>Service Domain (VRF)
+                            </label>
+                            <select id="vrfDomain" name="vrfDomain" 
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Select Service Domain...</option>
+                            </select>
+                        </div>
+
+                        <!-- Service Type -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-server mr-2"></i>Service Type
+                            </label>
+                            <select id="serviceType" name="serviceType" 
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                <option value="">Select Service Type...</option>
+                                <option value="web-server">Web Server</option>
+                                <option value="database">Database Server</option>
+                                <option value="application">Application Server</option>
+                                <option value="load-balancer">Load Balancer</option>
+                                <option value="firewall">Firewall</option>
+                                <option value="router">Router</option>
+                                <option value="switch">Switch</option>
+                                <option value="storage">Storage</option>
+                                <option value="backup">Backup System</option>
+                                <option value="monitoring">Monitoring</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        <!-- Description -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-comment mr-2"></i>Description
+                            </label>
+                            <textarea id="description" name="description" rows="3"
+                                      placeholder="Purpose and details of IP allocation..."
+                                      class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="flex space-x-3">
+                            <button type="button" onclick="getSuggestions()" 
+                                    class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors">
+                                <i class="fas fa-lightbulb mr-2"></i>Get Suggestions
+                            </button>
+                            <button type="button" onclick="resetForm()" 
+                                    class="px-6 py-3 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg font-medium transition-colors">
+                                <i class="fas fa-redo mr-2"></i>Reset
+                            </button>
+                        </div>
+
+                        <!-- Advanced Options -->
+                        <div class="mt-6 pt-6 border-t border-gray-200">
+                            <button type="button" onclick="toggleAdvancedOptions()" 
+                                    class="w-full text-left text-sm text-gray-600 hover:text-gray-800 flex items-center justify-between">
+                                <span><i class="fas fa-cog mr-2"></i>Advanced Options</span>
+                                <i class="fas fa-chevron-down transition-transform" id="advancedToggleIcon"></i>
+                            </button>
+                            
+                            <div id="advancedOptions" class="hidden mt-4 space-y-4 bg-gray-50 rounded-lg p-4">
+                                <!-- IP Range Specification -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-range mr-2"></i>Preferred IP Range
+                                    </label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input type="text" id="startIP" placeholder="Start IP (optional)"
+                                               class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500">
+                                        <input type="text" id="endIP" placeholder="End IP (optional)"
+                                               class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500">
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Specify range within subnet for targeted allocation</p>
+                                </div>
+
+                                <!-- Allocation Strategy -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-strategy mr-2"></i>Allocation Strategy
+                                    </label>
+                                    <select id="allocationStrategy" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500">
+                                        <option value="sequential">Sequential (default)</option>
+                                        <option value="random">Random Distribution</option>
+                                        <option value="clustered">Clustered Allocation</option>
+                                        <option value="balanced">Load Balanced</option>
+                                    </select>
+                                </div>
+
+                                <!-- Bulk Import -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-file-csv mr-2"></i>Bulk Import (CSV)
+                                    </label>
+                                    <div class="flex items-center space-x-2">
+                                        <input type="file" id="csvFile" accept=".csv" 
+                                               class="hidden" onchange="handleCSVImport(this)">
+                                        <button type="button" onclick="document.getElementById('csvFile').click()" 
+                                                class="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-sm rounded-md border border-gray-300">
+                                            <i class="fas fa-upload mr-2"></i>Upload CSV
+                                        </button>
+                                        <button type="button" onclick="downloadCSVTemplate()" 
+                                                class="px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm rounded-md">
+                                            <i class="fas fa-download mr-2"></i>Template
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">Upload CSV with columns: hostname, service_type, description</p>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Right Panel - IP Suggestions -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
+                    <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                        <i class="fas fa-list-ul mr-3 text-green-500"></i>
+                        IP Suggestions
+                    </h2>
+
+                    <!-- Suggestions Loading -->
+                    <div id="suggestionsLoading" class="hidden text-center py-8">
+                        <div class="loading-spinner"></div>
+                        <p class="text-gray-500 mt-2">Finding available IPs...</p>
+                    </div>
+
+                    <!-- No Suggestions State -->
+                    <div id="noSuggestions" class="text-center py-8">
+                        <i class="fas fa-search text-6xl text-gray-300 mb-4"></i>
+                        <p class="text-gray-500">Configure allocation settings and click "Get Suggestions" to see available IPs</p>
+                    </div>
+
+                    <!-- Suggestions List -->
+                    <div id="suggestionsList" class="hidden">
+                        <!-- Suggestions Header -->
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="text-sm text-gray-600">
+                                Found <span id="suggestionsCount" class="font-semibold text-green-600">0</span> available IPs
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="selectAllSuggestions()" class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded">
+                                    Select All
+                                </button>
+                                <button onclick="clearAllSuggestions()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                                    Clear All
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Suggestions Container -->
+                        <div id="suggestionsContainer" class="space-y-2 max-h-96 overflow-y-auto">
+                            <!-- Dynamic suggestions will be loaded here -->
+                        </div>
+
+                        <!-- Reserve Selected Button -->
+                        <div class="mt-6 pt-4 border-t border-gray-200">
+                            <button onclick="reserveSelectedIPs()" 
+                                    class="w-full bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                                    id="reserveButton" disabled>
+                                <i class="fas fa-lock mr-2"></i>Reserve Selected IPs (<span id="selectedCount">0</span>)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="hidden mt-8">
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center">
+                    <i class="fas fa-check-circle mr-3 text-green-500"></i>
+                    Allocation Results
+                </h2>
+                <div id="resultsContent">
+                    <!-- Results will be displayed here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions Panel -->
+        <div class="mt-8">
+            <div class="bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl shadow-lg p-6 text-white">
+                <h2 class="text-xl font-bold mb-4 flex items-center">
+                    <i class="fas fa-rocket mr-3"></i>
+                    Quick Actions
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <button onclick="quickAllocate('web-servers', 5)" 
+                            class="bg-white bg-opacity-20 hover:bg-opacity-30 p-4 rounded-lg transition-all text-left">
+                        <div class="flex items-center mb-2">
+                            <i class="fas fa-server text-2xl mr-3"></i>
+                            <div>
+                                <div class="font-semibold">Web Servers</div>
+                                <div class="text-sm opacity-80">Allocate 5 IPs</div>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button onclick="quickAllocate('database', 3)" 
+                            class="bg-white bg-opacity-20 hover:bg-opacity-30 p-4 rounded-lg transition-all text-left">
+                        <div class="flex items-center mb-2">
+                            <i class="fas fa-database text-2xl mr-3"></i>
+                            <div>
+                                <div class="font-semibold">Database</div>
+                                <div class="text-sm opacity-80">Allocate 3 IPs</div>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button onclick="quickAllocate('load-balancer', 2)" 
+                            class="bg-white bg-opacity-20 hover:bg-opacity-30 p-4 rounded-lg transition-all text-left">
+                        <div class="flex items-center mb-2">
+                            <i class="fas fa-balance-scale text-2xl mr-3"></i>
+                            <div>
+                                <div class="font-semibold">Load Balancer</div>
+                                <div class="text-sm opacity-80">Allocate 2 IPs</div>
+                            </div>
+                        </div>
+                    </button>
+                    
+                    <button onclick="openBulkImport()" 
+                            class="bg-white bg-opacity-20 hover:bg-opacity-30 p-4 rounded-lg transition-all text-left">
+                        <div class="flex items-center mb-2">
+                            <i class="fas fa-upload text-2xl mr-3"></i>
+                            <div>
+                                <div class="font-semibold">Bulk Import</div>
+                                <div class="text-sm opacity-80">Import from CSV</div>
+                            </div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-8 max-w-md w-full mx-4">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-check text-2xl text-green-600"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800 mb-2">IPs Reserved Successfully!</h3>
+                <p class="text-gray-600 mb-6" id="successMessage"></p>
+                <div class="flex space-x-3">
+                    <button onclick="closeSuccessModal()" class="flex-1 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg">
+                        Continue
+                    </button>
+                    <button onclick="viewReservedIPs()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg">
+                        View IPs
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSubnet = null;
+        let availableSubnets = [];
+        let suggestedIPs = [];
+        let selectedIPs = [];
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadInitialData();
+            
+            // Add event listeners
+            document.getElementById('subnetFilter').addEventListener('input', filterSubnets);
+            document.getElementById('subnet').addEventListener('input', validateSubnetInput);
+            document.getElementById('ipCount').addEventListener('input', updateButtonState);
+            
+            // Smart recommendation triggers
+            document.getElementById('ipCount').addEventListener('change', debounce(updateSmartRecommendations, 500));
+            document.getElementById('serviceType').addEventListener('change', updateSmartRecommendations);
+            document.getElementById('vrfDomain').addEventListener('change', updateSmartRecommendations);
+        });
+
+        async function loadInitialData() {
+            try {
+                await Promise.all([
+                    loadAvailableSubnets(),
+                    loadVRFList()
+                ]);
+            } catch (error) {
+                console.error('Error loading initial data:', error);
+            }
+        }
+
+        async function loadAvailableSubnets() {
+            document.getElementById('subnetsLoading').classList.remove('hidden');
+            
+            try {
+                // Get smart recommendations based on current form data
+                const ipCount = document.getElementById('ipCount').value || 1;
+                const serviceType = document.getElementById('serviceType').value || '';
+                const vrfDomain = document.getElementById('vrfDomain').value || '';
+                
+                const params = new URLSearchParams({
+                    required_ips: ipCount,
+                    service_type: serviceType,
+                    vrf_preference: vrfDomain
+                });
+                
+                const response = await fetch(`/api/smart-subnet-recommendations?${params}`);
+                const data = await response.json();
+                
+                if (data.recommendations) {
+                    availableSubnets = data.recommendations;
+                    displaySmartSubnetRecommendations(data.recommendations);
+                    updateSubnetStats(data.recommendations);
+                }
+            } catch (error) {
+                console.error('Error loading smart recommendations:', error);
+                // Fallback to basic available subnets
+                await loadBasicAvailableSubnets();
+            } finally {
+                document.getElementById('subnetsLoading').classList.add('hidden');
+            }
+        }
+
+        async function loadBasicAvailableSubnets() {
+            try {
+                const response = await fetch('/api/available-subnets');
+                const data = await response.json();
+                
+                if (data.subnets) {
+                    availableSubnets = data.subnets;
+                    displaySubnetRecommendations(data.subnets);
+                    updateSubnetStats(data.subnets);
+                }
+            } catch (error) {
+                console.error('Error loading basic subnets:', error);
+                showError('Failed to load subnet recommendations');
+            }
+        }
+
+        function displaySmartSubnetRecommendations(recommendations) {
+            const container = document.getElementById('subnetRecommendations');
+            
+            if (!recommendations || recommendations.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-search text-4xl mb-3"></i>
+                        <p>No suitable subnets found</p>
+                        <button onclick="loadBasicAvailableSubnets()" class="mt-2 text-blue-500 hover:text-blue-700 text-sm">
+                            Show all available subnets
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = recommendations.map((rec, index) => {
+                const scoreColor = getScoreColor(rec.recommendation_score);
+                const utilizationClass = getUtilizationClass(rec.utilization_percent);
+                const isTopRecommendation = index === 0;
+                
+                return `
+                    <div class="subnet-card ${utilizationClass} rounded-lg p-4 cursor-pointer card-hover ${isTopRecommendation ? 'ring-2 ring-yellow-400' : ''}"
+                         onclick="selectSubnet('${rec.subnet}', ${rec.available_count}, ${rec.total_capacity})">
+                        
+                        <!-- Top Recommendation Badge -->
+                        ${isTopRecommendation ? `
+                            <div class="flex items-center mb-2">
+                                <i class="fas fa-crown text-yellow-300 mr-2"></i>
+                                <span class="text-xs font-semibold">TOP RECOMMENDATION</span>
+                            </div>
+                        ` : ''}
+                        
+                        <!-- Score Badge -->
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="font-semibold text-lg">${rec.subnet}</div>
+                            <div class="flex items-center space-x-2">
+                                <div class="bg-white bg-opacity-20 px-2 py-1 rounded text-xs font-semibold">
+                                    ${rec.recommendation_score}% match
+                                </div>
+                                <div class="text-sm opacity-90">${rec.utilization_percent}%</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Subnet Info -->
+                        <div class="grid grid-cols-3 gap-2 text-sm opacity-90 mb-2">
+                            <div>
+                                <div class="font-medium">${rec.available_count}</div>
+                                <div class="text-xs opacity-75">Available</div>
+                            </div>
+                            <div>
+                                <div class="font-medium">${rec.total_capacity}</div>
+                                <div class="text-xs opacity-75">Total</div>
+                            </div>
+                            <div>
+                                <div class="font-medium">${rec.network_class}</div>
+                                <div class="text-xs opacity-75">${rec.is_private ? 'Private' : 'Public'}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Recommendation Reason -->
+                        <div class="text-xs opacity-80 mb-3 bg-white bg-opacity-10 rounded p-2">
+                            <i class="fas fa-lightbulb mr-1"></i>
+                            ${rec.recommendation_reason}
+                        </div>
+                        
+                        <!-- Utilization Bar -->
+                        <div class="bg-white bg-opacity-20 rounded-full h-2">
+                            <div class="bg-white rounded-full h-2 transition-all duration-300" 
+                                 style="width: ${rec.utilization_percent}%"></div>
+                        </div>
+                        
+                        <!-- VRF Info -->
+                        ${rec.vrfs ? `
+                            <div class="mt-2 text-xs opacity-75">
+                                <i class="fas fa-tags mr-1"></i>VRF: ${rec.vrfs}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function displaySubnetRecommendations(subnets) {
+            const container = document.getElementById('subnetRecommendations');
+            
+            if (!subnets || subnets.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-network-wired text-4xl mb-3"></i>
+                        <p>No subnets found</p>
+                    </div>
+                `;
+                return;
+            }
+
+            // Sort subnets by utilization (lowest first for recommendations)
+            const sortedSubnets = subnets.sort((a, b) => a.utilization_percent - b.utilization_percent);
+
+            container.innerHTML = sortedSubnets.map(subnet => {
+                const utilizationClass = getUtilizationClass(subnet.utilization_percent);
+                const availabilityScore = subnet.available_count / subnet.total_capacity;
+                const isRecommended = availabilityScore > 0.3 && subnet.utilization_percent < 80;
+                
+                return `
+                    <div class="subnet-card ${utilizationClass} rounded-lg p-4 cursor-pointer card-hover ${isRecommended ? 'ring-2 ring-yellow-400' : ''}"
+                         onclick="selectSubnet('${subnet.subnet}', ${subnet.available_count}, ${subnet.total_capacity})">
+                        ${isRecommended ? '<div class="flex items-center mb-2"><i class="fas fa-star text-yellow-300 mr-2"></i><span class="text-xs font-semibold">RECOMMENDED</span></div>' : ''}
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="font-semibold text-lg">${subnet.subnet}</div>
+                            <div class="text-sm opacity-90">${subnet.utilization_percent}%</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 text-sm opacity-90">
+                            <div>
+                                <div class="font-medium">${subnet.available_count}</div>
+                                <div class="text-xs opacity-75">Available</div>
+                            </div>
+                            <div>
+                                <div class="font-medium">${subnet.total_capacity}</div>
+                                <div class="text-xs opacity-75">Total</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 bg-white bg-opacity-20 rounded-full h-2">
+                            <div class="bg-white rounded-full h-2 transition-all duration-300" 
+                                 style="width: ${subnet.utilization_percent}%"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getUtilizationClass(percentage) {
+            if (percentage < 50) return 'available';
+            if (percentage < 80) return 'warning';
+            return 'critical';
+        }
+
+        function updateSubnetStats(subnets) {
+            const availableCount = subnets.filter(s => s.available_count > 0).length;
+            const totalCapacity = subnets.reduce((sum, s) => sum + s.available_count, 0);
+            
+            document.getElementById('availableSubnets').textContent = availableCount;
+            document.getElementById('totalCapacity').textContent = totalCapacity.toLocaleString();
+            
+            // Update health indicators
+            updateNetworkHealth(subnets);
+        }
+
+        function updateNetworkHealth(subnets) {
+            if (!subnets || subnets.length === 0) return;
+            
+            let healthy = 0, warning = 0, critical = 0;
+            
+            subnets.forEach(subnet => {
+                const utilization = subnet.utilization_percent || 0;
+                if (utilization < 60) healthy++;
+                else if (utilization < 85) warning++;
+                else critical++;
+            });
+            
+            const total = subnets.length;
+            const healthPercentage = ((healthy + warning * 0.5) / total) * 100;
+            
+            // Update health status
+            let healthStatus = 'Excellent';
+            let healthColor = 'bg-green-500';
+            
+            if (healthPercentage < 30) {
+                healthStatus = 'Critical';
+                healthColor = 'bg-red-500';
+            } else if (healthPercentage < 70) {
+                healthStatus = 'Warning';
+                healthColor = 'bg-yellow-500';
+            }
+            
+            document.getElementById('healthStatus').textContent = healthStatus;
+            document.getElementById('overallHealthBar').className = `h-2 rounded-full transition-all duration-500 ${healthColor}`;
+            document.getElementById('overallHealthBar').style.width = `${Math.max(healthPercentage, 10)}%`;
+            
+            // Update indicator dots
+            document.getElementById('healthGreen').style.opacity = healthy > 0 ? '1' : '0.3';
+            document.getElementById('healthYellow').style.opacity = warning > 0 ? '1' : '0.3';
+            document.getElementById('healthRed').style.opacity = critical > 0 ? '1' : '0.3';
+        }
+
+        async function loadVRFList() {
+            try {
+                const response = await fetch('/api/vrf-list');
+                const data = await response.json();
+                
+                const vrfSelect = document.getElementById('vrfDomain');
+                vrfSelect.innerHTML = '<option value="">Select Service Domain...</option>';
+                
+                if (data.vrfs && data.vrfs.length > 0) {
+                    data.vrfs.forEach(vrf => {
+                        const option = document.createElement('option');
+                        option.value = vrf.vrf_name;
+                        option.textContent = `${vrf.vrf_name} (${vrf.ip_count} IPs)`;
+                        vrfSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading VRF list:', error);
+            }
+        }
+
+        function selectSubnet(subnet, availableCount, totalCapacity) {
+            currentSubnet = subnet;
+            
+            // Update form
+            document.getElementById('subnet').value = subnet;
+            
+            // Show selected subnet display
+            const display = document.getElementById('selectedSubnetDisplay');
+            const text = document.getElementById('selectedSubnetText');
+            const info = document.getElementById('selectedSubnetInfo');
+            
+            text.textContent = subnet;
+            info.textContent = `${availableCount} available of ${totalCapacity} total IPs`;
+            
+            display.classList.remove('hidden');
+            document.getElementById('manualSubnetInput').classList.add('hidden');
+            
+            // Clear any previous suggestions
+            clearSuggestions();
+            
+            // Update step indicator
+            updateStepIndicator(2);
+        }
+
+        function clearSelectedSubnet() {
+            currentSubnet = null;
+            document.getElementById('selectedSubnetDisplay').classList.add('hidden');
+            document.getElementById('manualSubnetInput').classList.remove('hidden');
+            document.getElementById('subnet').value = '';
+            clearSuggestions();
+            updateStepIndicator(1);
+        }
+
+        function filterSubnets() {
+            const filter = document.getElementById('subnetFilter').value.toLowerCase();
+            const filteredSubnets = availableSubnets.filter(subnet => 
+                subnet.subnet.toLowerCase().includes(filter)
+            );
+            displaySubnetRecommendations(filteredSubnets);
+        }
+
+        function validateSubnetInput() {
+            const subnetInput = document.getElementById('subnet').value;
+            if (subnetInput && !currentSubnet) {
+                // Manual input - validate format
+                try {
+                    // Basic CIDR validation
+                    if (subnetInput.includes('/')) {
+                        const [ip, cidr] = subnetInput.split('/');
+                        if (cidr >= 8 && cidr <= 30) {
+                            updateStepIndicator(2);
+                        }
+                    }
+                } catch (error) {
+                    // Invalid format
+                }
+            }
+        }
+
+        function setQuickCount(count) {
+            document.getElementById('ipCount').value = count;
+            updateButtonState();
+        }
+
+        function updateButtonState() {
+            const subnet = document.getElementById('subnet').value;
+            const count = document.getElementById('ipCount').value;
+            
+            // Enable/disable get suggestions button
+            const getSuggestionsBtn = document.querySelector('button[onclick="getSuggestions()"]');
+            if (getSuggestionsBtn) {
+                getSuggestionsBtn.disabled = !subnet || !count || count < 1;
+            }
+        }
+
+        async function getSuggestions() {
+            const subnet = document.getElementById('subnet').value;
+            const count = parseInt(document.getElementById('ipCount').value);
+            
+            if (!subnet || count < 1) {
+                showError('Please select a subnet and specify IP count');
+                return;
+            }
+
+            // Show loading
+            document.getElementById('suggestionsLoading').classList.remove('hidden');
+            document.getElementById('noSuggestions').classList.add('hidden');
+            document.getElementById('suggestionsList').classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/suggest-ips', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        subnet: subnet,
+                        count: count
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.suggested_ips && data.suggested_ips.length > 0) {
+                    suggestedIPs = data.suggested_ips;
+                    displaySuggestions(data.suggested_ips, data.available_count);
+                    updateStepIndicator(3);
+                } else {
+                    showError(data.warning || 'No available IPs found in the selected subnet');
+                }
+
+            } catch (error) {
+                console.error('Error getting suggestions:', error);
+                showError('Failed to get IP suggestions');
+            } finally {
+                document.getElementById('suggestionsLoading').classList.add('hidden');
+            }
+        }
+
+        function displaySuggestions(ips, availableCount) {
+            document.getElementById('suggestionsList').classList.remove('hidden');
+            document.getElementById('suggestionsCount').textContent = ips.length;
+            
+            const container = document.getElementById('suggestionsContainer');
+            selectedIPs = []; // Reset selection
+            
+            container.innerHTML = ips.map((ip, index) => `
+                <div class="flex items-center justify-between p-3 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors">
+                    <div class="flex items-center">
+                        <input type="checkbox" id="ip_${index}" value="${ip}" 
+                               onchange="toggleIPSelection('${ip}')"
+                               class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500">
+                        <label for="ip_${index}" class="ml-3 text-sm font-medium text-gray-700 cursor-pointer">
+                            ${ip}
+                        </label>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Available</span>
+                        <button onclick="pingIP('${ip}')" class="text-gray-400 hover:text-blue-500 text-sm">
+                            <i class="fas fa-wifi"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+            
+            updateReserveButton();
+        }
+
+        function toggleIPSelection(ip) {
+            const index = selectedIPs.indexOf(ip);
+            if (index > -1) {
+                selectedIPs.splice(index, 1);
+            } else {
+                selectedIPs.push(ip);
+            }
+            updateReserveButton();
+        }
+
+        function selectAllSuggestions() {
+            const checkboxes = document.querySelectorAll('#suggestionsContainer input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+                if (!selectedIPs.includes(checkbox.value)) {
+                    selectedIPs.push(checkbox.value);
+                }
+            });
+            updateReserveButton();
+        }
+
+        function clearAllSuggestions() {
+            const checkboxes = document.querySelectorAll('#suggestionsContainer input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            selectedIPs = [];
+            updateReserveButton();
+        }
+
+        function updateReserveButton() {
+            const button = document.getElementById('reserveButton');
+            const count = document.getElementById('selectedCount');
+            
+            count.textContent = selectedIPs.length;
+            button.disabled = selectedIPs.length === 0;
+            
+            if (selectedIPs.length > 0) {
+                updateStepIndicator(4);
+            }
+        }
+
+        async function reserveSelectedIPs() {
+            if (selectedIPs.length === 0) {
+                showError('Please select IPs to reserve');
+                return;
+            }
+
+            const subnet = document.getElementById('subnet').value;
+            const vrfDomain = document.getElementById('vrfDomain').value;
+            const serviceType = document.getElementById('serviceType').value;
+            const description = document.getElementById('description').value;
+
+            try {
+                const response = await fetch('/api/bulk-reserve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ip_list: selectedIPs,
+                        subnet: subnet,
+                        vrf_vpn: vrfDomain,
+                        service: serviceType,
+                        description: description
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccessModal(data);
+                    clearSuggestions();
+                    resetForm();
+                } else {
+                    showError('Failed to reserve IPs: ' + (data.error || 'Unknown error'));
+                }
+
+            } catch (error) {
+                console.error('Error reserving IPs:', error);
+                showError('Failed to reserve IPs');
+            }
+        }
+
+        function showSuccessModal(data) {
+            const modal = document.getElementById('successModal');
+            const message = document.getElementById('successMessage');
+            
+            message.textContent = `Successfully reserved ${data.total_reserved} IP addresses. ${data.total_failed > 0 ? `${data.total_failed} IPs failed to reserve.` : ''}`;
+            modal.classList.remove('hidden');
+        }
+
+        function closeSuccessModal() {
+            document.getElementById('successModal').classList.add('hidden');
+        }
+
+        function viewReservedIPs() {
+            window.location.href = '/ip-management';
+        }
+
+        function clearSuggestions() {
+            document.getElementById('suggestionsList').classList.add('hidden');
+            document.getElementById('noSuggestions').classList.remove('hidden');
+            suggestedIPs = [];
+            selectedIPs = [];
+        }
+
+        function resetForm() {
+            document.getElementById('allocationForm').reset();
+            clearSelectedSubnet();
+            clearSuggestions();
+            updateStepIndicator(1);
+        }
+
+        function updateStepIndicator(step) {
+            const indicators = document.querySelectorAll('.step-indicator');
+            indicators.forEach((indicator, index) => {
+                indicator.classList.remove('active', 'completed');
+                if (index + 1 < step) {
+                    indicator.classList.add('completed');
+                } else if (index + 1 === step) {
+                    indicator.classList.add('active');
+                }
+            });
+        }
+
+        function refreshData() {
+            location.reload();
+        }
+
+        function getScoreColor(score) {
+            if (score >= 80) return 'text-green-500';
+            if (score >= 60) return 'text-yellow-500';
+            return 'text-red-500';
+        }
+
+        function analyzeSubnets() {
+            loadAvailableSubnets();
+        }
+
+
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        function updateSmartRecommendations() {
+            // Only update if we have meaningful data
+            const ipCount = document.getElementById('ipCount').value;
+            if (ipCount && ipCount > 0) {
+                loadAvailableSubnets();
+            }
+        }
+
+        function toggleAdvancedOptions() {
+            const options = document.getElementById('advancedOptions');
+            const icon = document.getElementById('advancedToggleIcon');
+            
+            if (options.classList.contains('hidden')) {
+                options.classList.remove('hidden');
+                icon.style.transform = 'rotate(180deg)';
+            } else {
+                options.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        function handleCSVImport(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const csv = e.target.result;
+                    const lines = csv.split('\n');
+                    const headers = lines[0].split(',').map(h => h.trim());
+                    
+                    // Validate CSV format
+                    const requiredHeaders = ['hostname', 'service_type', 'description'];
+                    const hasRequiredHeaders = requiredHeaders.every(header => 
+                        headers.some(h => h.toLowerCase().includes(header.toLowerCase()))
+                    );
+                    
+                    if (!hasRequiredHeaders) {
+                        showError('CSV must contain columns: hostname, service_type, description');
+                        return;
+                    }
+
+                    // Process CSV data
+                    const imports = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        if (lines[i].trim()) {
+                            const values = lines[i].split(',').map(v => v.trim());
+                            if (values.length >= 3) {
+                                imports.push({
+                                    hostname: values[0],
+                                    service_type: values[1],
+                                    description: values[2]
+                                });
+                            }
+                        }
+                    }
+
+                    if (imports.length > 0) {
+                        document.getElementById('ipCount').value = imports.length;
+                        showSuccess(`Ready to import ${imports.length} entries from CSV`);
+                        
+                        // Store CSV data for later use
+                        window.csvImportData = imports;
+                    }
+
+                } catch (error) {
+                    showError('Failed to parse CSV file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function downloadCSVTemplate() {
+            const csvContent = 'hostname,service_type,description\n' +
+                              'web-server-01,web-server,Primary web server\n' +
+                              'db-server-01,database,Main database server\n' +
+                              'app-server-01,application,Application server';
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ip_allocation_template.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function showSuccess(message) {
+            // Create simple success notification
+            const notification = document.createElement('div');
+            notification.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50';
+            notification.innerHTML = `<i class="fas fa-check mr-2"></i>${message}`;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        function quickAllocate(serviceType, count) {
+            // Pre-fill form with quick allocation settings
+            document.getElementById('serviceType').value = serviceType;
+            document.getElementById('ipCount').value = count;
+            document.getElementById('description').value = `Quick allocation for ${serviceType} (${count} IPs)`;
+            
+            // Trigger smart recommendations
+            updateSmartRecommendations();
+            
+            // Scroll to form
+            document.getElementById('allocationForm').scrollIntoView({ behavior: 'smooth' });
+            
+            showSuccess(`Quick allocation setup: ${count} IPs for ${serviceType}`);
+        }
+
+        function openBulkImport() {
+            // Open advanced options and focus on CSV import
+            const options = document.getElementById('advancedOptions');
+            const icon = document.getElementById('advancedToggleIcon');
+            
+            if (options.classList.contains('hidden')) {
+                options.classList.remove('hidden');
+                icon.style.transform = 'rotate(180deg)';
+            }
+            
+            // Scroll to advanced options
+            options.scrollIntoView({ behavior: 'smooth' });
+            
+            // Highlight CSV import section
+            const csvSection = options.querySelector('div:last-child');
+            csvSection.style.background = '#dbeafe';
+            setTimeout(() => {
+                csvSection.style.background = '';
+            }, 2000);
+        }
+
+        function pingIP(ip) {
+            // Placeholder for ping functionality
+            console.log('Ping IP:', ip);
+        }
+
+        function showError(message) {
+            // Simple error display - you can enhance this
+            alert('Error: ' + message);
+        }
+
+        // Initialize
+        updateButtonState();
+    </script>
+</body>
+</html>
