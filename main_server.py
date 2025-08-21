@@ -2153,7 +2153,11 @@ def get_ip_data():
     format_type = request.args.get('format', 'json')
     
     try:
-        cursor = mysql_connection.cursor(dictionary=True)
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
         
         # Define REAL status conditions based on actual data
         if status == 'available':
@@ -2203,12 +2207,20 @@ def get_ip_data():
     except Exception as e:
         print(f"❌ Error getting IP data: {e}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        if 'connection' in locals() and connection:
+            cursor.close()
+            connection.close()
 
 @app.route('/api/subnets-overview')
 def get_subnets_overview():
     """Get subnet overview with REAL calculation from actual data"""
     try:
-        cursor = mysql_connection.cursor(dictionary=True)
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
         
         # Get REAL subnet information with actual usage calculation
         query = """
@@ -2293,12 +2305,20 @@ def get_subnets_overview():
     except Exception as e:
         print(f"❌ Error getting subnets overview: {e}")
         return jsonify({'error': str(e)}), 500
+    finally:
+        if 'connection' in locals() and connection:
+            cursor.close()
+            connection.close()
 
 @app.route('/api/calculation-comparison')
 def calculation_comparison():
     """Compare old vs new calculation methods"""
     try:
-        cursor = mysql_connection.cursor(dictionary=True)
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
         
         # OLD METHOD - Based on status column
         cursor.execute("""
@@ -2377,12 +2397,20 @@ def calculation_comparison():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if 'connection' in locals() and connection:
+            cursor.close()
+            connection.close()
 
 @app.route('/api/vrf-distribution')
 def get_vrf_distribution():
     """Get VRF distribution data for charts"""
     try:
-        cursor = mysql_connection.cursor(dictionary=True)
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
         
         query = """
         SELECT 
@@ -2403,6 +2431,10 @@ def get_vrf_distribution():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if 'connection' in locals() and connection:
+            cursor.close()
+            connection.close()
 
 @app.route('/api/import-csv', methods=['POST'])
 def import_csv_data():
@@ -3127,7 +3159,11 @@ def api_ip_details(status):
 def get_recent_activity():
     """Get recent activity data"""
     try:
-        cursor = mysql_connection.cursor(dictionary=True)
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
         
         # Simulate recent activity based on IP data
         query = """
@@ -3158,6 +3194,209 @@ def get_recent_activity():
         return jsonify({'activities': activities})
         
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if 'connection' in locals() and connection:
+            cursor.close()
+            connection.close()
+
+# New enhanced subnet management endpoints
+@app.route('/api/subnet-details/<path:subnet_name>')
+def get_subnet_details(subnet_name):
+    """Get detailed information about a specific subnet including all IPs"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # Check if subnet exists in ip_inventory
+        cursor.execute("SELECT COUNT(*) as count FROM ip_inventory WHERE subnet = %s", (subnet_name,))
+        subnet_exists = cursor.fetchone()['count'] > 0
+        
+        if not subnet_exists:
+            return jsonify({'error': 'Subnet not found'}), 404
+        
+        # Get basic subnet information
+        subnet = {
+            'subnet': subnet_name,
+            'description': f'Subnet {subnet_name}',
+            'vrf_vpn': None,
+            'vlan_id': None,
+            'status': 'Active',
+            'created_at': None,
+            'updated_at': None
+        }
+        
+        # Get all IPs in this subnet
+        cursor.execute("""
+            SELECT ip_address, status, hostname, description, vrf_vpn,
+                   created_at, updated_at
+            FROM ip_inventory 
+            WHERE subnet = %s 
+            ORDER BY INET_ATON(ip_address)
+        """, (subnet_name,))
+        ips = cursor.fetchall()
+        
+        # Calculate subnet statistics
+        try:
+            network = ipaddress.ip_network(subnet_name, strict=False)
+            total_ips = network.num_addresses - 2  # Exclude network and broadcast
+            
+            # Count IPs by status
+            used_count = len([ip for ip in ips if ip['status'] == 'used'])
+            reserved_count = len([ip for ip in ips if ip['status'] == 'reserved'])
+            available_count = total_ips - used_count - reserved_count
+            
+            subnet_stats = {
+                'total_ips': total_ips,
+                'used_ips': used_count,
+                'reserved_ips': reserved_count,
+                'available_ips': available_count,
+                'utilization': round((used_count / total_ips) * 100, 1) if total_ips > 0 else 0
+            }
+            
+            # Add statistics to subnet data
+            subnet.update(subnet_stats)
+            
+        except ValueError as e:
+            return jsonify({'error': f'Invalid subnet format: {e}'}), 400
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'subnet': subnet,
+            'ips': ips
+        })
+        
+    except Exception as e:
+        print(f"Error getting subnet details: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/reserve-next-ip', methods=['POST'])
+def reserve_next_ip():
+    """Reserve the next available IP in a subnet"""
+    try:
+        data = request.get_json()
+        subnet_name = data.get('subnet')
+        
+        if not subnet_name:
+            return jsonify({'error': 'Subnet is required'}), 400
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get the next available IP
+        try:
+            network = ipaddress.ip_network(subnet_name, strict=False)
+            
+            # Get existing IPs in this subnet
+            cursor.execute("""
+                SELECT ip_address FROM ip_inventory 
+                WHERE subnet = %s AND status IN ('used', 'reserved')
+            """, (subnet_name,))
+            used_ips = [row['ip_address'] for row in cursor.fetchall()]
+            
+            # Find next available IP
+            next_ip = None
+            for ip in network.hosts():
+                ip_str = str(ip)
+                if ip_str not in used_ips:
+                    next_ip = ip_str
+                    break
+            
+            if not next_ip:
+                return jsonify({'error': 'No available IPs in subnet'}), 400
+            
+            # Reserve the IP
+            cursor.execute("""
+                INSERT INTO ip_inventory (ip_address, subnet, status, hostname, description)
+                VALUES (%s, %s, 'reserved', %s, %s)
+                ON DUPLICATE KEY UPDATE 
+                status = 'reserved', 
+                hostname = VALUES(hostname), 
+                description = VALUES(description),
+                updated_at = CURRENT_TIMESTAMP
+            """, (next_ip, subnet_name, f"Auto-reserved-{datetime.now().strftime('%Y%m%d-%H%M%S')}", 
+                  f"Automatically reserved IP from subnet {subnet_name}"))
+            
+            connection.commit()
+            cursor.close()
+            connection.close()
+            
+            return jsonify({
+                'success': True,
+                'ip': next_ip,
+                'message': f'Successfully reserved IP {next_ip}'
+            })
+            
+        except ValueError as e:
+            return jsonify({'error': f'Invalid subnet format: {e}'}), 400
+        
+    except Exception as e:
+        print(f"Error reserving next IP: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/subnets/enhanced')
+def get_enhanced_subnets():
+    """Get enhanced subnet list with utilization data"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get all subnets with statistics
+        cursor.execute("""
+            SELECT s.*, 
+                   COUNT(i.id) as configured_ips,
+                   SUM(CASE WHEN i.status = 'used' THEN 1 ELSE 0 END) as used_ips,
+                   SUM(CASE WHEN i.status = 'reserved' THEN 1 ELSE 0 END) as reserved_ips,
+                   SUM(CASE WHEN i.status = 'available' THEN 1 ELSE 0 END) as available_ips
+            FROM subnets s
+            LEFT JOIN ip_inventory i ON s.subnet = i.subnet
+            GROUP BY s.id, s.subnet
+            ORDER BY s.subnet
+        """)
+        subnets = cursor.fetchall()
+        
+        # Calculate total possible IPs for each subnet
+        for subnet in subnets:
+            try:
+                network = ipaddress.ip_network(subnet['subnet'], strict=False)
+                subnet['total_ips'] = network.num_addresses - 2  # Exclude network and broadcast
+                
+                # Calculate real availability
+                used = subnet['used_ips'] or 0
+                reserved = subnet['reserved_ips'] or 0
+                total_possible = subnet['total_ips']
+                real_available = total_possible - used - reserved
+                
+                subnet['real_available_ips'] = max(0, real_available)
+                subnet['utilization_percent'] = round((used / total_possible) * 100, 1) if total_possible > 0 else 0
+                
+            except ValueError:
+                subnet['total_ips'] = 0
+                subnet['real_available_ips'] = 0
+                subnet['utilization_percent'] = 0
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'subnets': subnets
+        })
+        
+    except Exception as e:
+        print(f"Error getting enhanced subnets: {e}")
         return jsonify({'error': str(e)}), 500
 
 # Existing routes continue...
