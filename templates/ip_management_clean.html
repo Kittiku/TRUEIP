@@ -2136,118 +2136,263 @@
         // Enhanced fast subnet detail function
         async function openFastSubnetDetail(subnet) {
             try {
-                // Show loading modal
-                const modal = document.getElementById('subnet-modal');
+                // Show loading modal with correct IDs
+                const modal = document.getElementById('subnet-detail-modal');
                 const modalTitle = document.getElementById('modal-subnet-title');
-                const modalContent = document.getElementById('subnet-details-content');
+                const modalInfo = document.getElementById('modal-subnet-info');
+                const modalIpList = document.getElementById('modal-ip-list');
                 
+                if (!modal || !modalTitle || !modalIpList) {
+                    console.error('Modal elements not found:', {modal, modalTitle, modalIpList});
+                    showToast('Modal elements not found', 'error');
+                    return;
+                }
+                
+                // Set modal title and info
                 modalTitle.textContent = `Subnet Details - ${subnet}`;
-                modalContent.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2">Loading subnet details...</p></div>';
+                modalInfo.textContent = `Detailed IP address management for ${subnet}`;
+                
+                // Show loading in IP list
+                modalIpList.innerHTML = '<tr><td colspan="6" class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-blue-600"></i><p class="mt-2">Loading subnet details...</p></td></tr>';
+                
+                // Show modal
                 modal.classList.remove('hidden');
+                
+                // Store current subnet for reference
+                currentSubnetData = { subnet: subnet };
                 
                 // Fetch detailed data using fast API
                 const response = await fetch(`/api/fast-subnet-ips?subnet=${encodeURIComponent(subnet)}&page=1&per_page=50`);
                 const data = await response.json();
                 
                 if (data.error) {
-                    modalContent.innerHTML = `<div class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">${data.error}</p></div>`;
+                    modalIpList.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">${data.error}</p></td></tr>`;
                     return;
                 }
                 
-                // Render subnet detail with pagination
-                renderSubnetDetailModal(data, subnet);
+                // Update sidebar statistics
+                updateModalStatistics(data);
+                
+                // Render IP list with proper table structure
+                renderModalIPList(data, subnet);
                 
             } catch (error) {
                 console.error('Error opening subnet detail:', error);
                 showToast('Failed to load subnet details', 'error');
+                
+                // Show error in modal if it's open
+                const modalIpList = document.getElementById('modal-ip-list');
+                if (modalIpList) {
+                    modalIpList.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-red-500"><i class="fas fa-exclamation-triangle text-2xl"></i><p class="mt-2">Failed to load data</p></td></tr>';
+                }
             }
         }
 
-        // Render subnet detail modal with pagination
-        function renderSubnetDetailModal(data, subnet) {
-            const modalContent = document.getElementById('subnet-details-content');
+        // Update modal sidebar statistics
+        function updateModalStatistics(data) {
+            // Update statistics in sidebar
+            document.getElementById('modal-total-ips').textContent = data.total_ips || '0';
+            document.getElementById('modal-network-info').textContent = `Network: ${data.subnet || 'N/A'}`;
+            document.getElementById('modal-used-ips').textContent = data.used_count || '0';
+            document.getElementById('modal-used-percent').textContent = `${((data.used_count / data.total_ips) * 100).toFixed(1)}%`;
+            document.getElementById('modal-available-ips').textContent = data.available_count || '0';
+            document.getElementById('modal-available-percent').textContent = `${((data.available_count / data.total_ips) * 100).toFixed(1)}%`;
+            document.getElementById('modal-reserved-ips').textContent = '0'; // Reserved not implemented yet
+            document.getElementById('modal-reserved-percent').textContent = '0%';
+            document.getElementById('modal-utilization').textContent = `${data.utilization?.toFixed(1) || 0}%`;
+            document.getElementById('modal-utilization-bar').style.width = `${data.utilization || 0}%`;
+        }
+
+        // Render IP list in modal table format
+        function renderModalIPList(data, subnet) {
+            const modalIpList = document.getElementById('modal-ip-list');
             
-            modalContent.innerHTML = `
-                <div class="mb-6">
-                    <div class="grid grid-cols-4 gap-4 mb-6">
-                        <div class="bg-blue-50 rounded-lg p-4 text-center">
-                            <div class="text-2xl font-bold text-blue-600">${data.total_ips}</div>
-                            <div class="text-sm text-blue-600">Total IPs</div>
-                        </div>
-                        <div class="bg-red-50 rounded-lg p-4 text-center">
-                            <div class="text-2xl font-bold text-red-600">${data.used_count}</div>
-                            <div class="text-sm text-red-600">Used</div>
-                        </div>
-                        <div class="bg-green-50 rounded-lg p-4 text-center">
-                            <div class="text-2xl font-bold text-green-600">${data.available_count}</div>
-                            <div class="text-sm text-green-600">Available</div>
-                        </div>
-                        <div class="bg-purple-50 rounded-lg p-4 text-center">
-                            <div class="text-2xl font-bold text-purple-600">${data.utilization?.toFixed(1) || 0}%</div>
-                            <div class="text-sm text-purple-600">Utilization</div>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-white border rounded-lg overflow-hidden">
-                        <div class="max-h-96 overflow-y-auto">
-                            <table class="min-w-full">
-                                <thead class="bg-gray-50 sticky top-0">
-                                    <tr>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">IP Address</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Hostname</th>
-                                        <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-200">
-                                    ${data.ips.map(ip => `
-                                        <tr class="hover:bg-gray-50">
-                                            <td class="px-4 py-2 font-mono text-sm">${ip.ip_address}</td>
-                                            <td class="px-4 py-2">
-                                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ip.status === 'Available' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                                    ${ip.status}
-                                                </span>
-                                            </td>
-                                            <td class="px-4 py-2 text-sm">${ip.hostname || '-'}</td>
-                                            <td class="px-4 py-2 text-sm">
-                                                ${ip.status === 'Available' ? 
-                                                    '<button class="text-blue-600 hover:text-blue-800 text-xs">Reserve</button>' : 
-                                                    '<button class="text-red-600 hover:text-red-800 text-xs">Release</button>'
-                                                }
-                                            </td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                        
-                        ${data.total_pages > 1 ? `
-                            <div class="px-4 py-3 bg-gray-50 border-t flex justify-between items-center">
+            if (!data.ips || data.ips.length === 0) {
+                modalIpList.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-gray-500">No IP addresses found</td></tr>';
+                return;
+            }
+            
+            modalIpList.innerHTML = data.ips.map(ip => {
+                const statusClass = ip.status === 'Available' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+                const actionButton = ip.status === 'Available' ? 
+                    `<button onclick="reserveIP('${ip.ip_address}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium">Reserve</button>` :
+                    `<button onclick="releaseIP('${ip.ip_address}')" class="text-red-600 hover:text-red-800 text-sm font-medium">Release</button>`;
+                
+                return `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 font-mono text-sm">${ip.ip_address}</td>
+                        <td class="px-4 py-3">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusClass}">
+                                ${ip.status}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-sm">${ip.hostname || '-'}</td>
+                        <td class="px-4 py-3 text-sm">${ip.description || '-'}</td>
+                        <td class="px-4 py-3 text-sm">${ip.vrf_vpn || 'DEFAULT-VRF'}</td>
+                        <td class="px-4 py-3 text-sm">
+                            ${actionButton}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Add pagination if needed
+            if (data.total_pages > 1) {
+                const paginationRow = `
+                    <tr class="bg-gray-50">
+                        <td colspan="6" class="px-4 py-3">
+                            <div class="flex justify-between items-center">
                                 <div class="text-sm text-gray-500">
                                     Page ${data.current_page} of ${data.total_pages} (${data.total_ips} total IPs)
                                 </div>
                                 <div class="flex space-x-2">
-                                    ${data.current_page > 1 ? `<button onclick="loadSubnetDetailPage('${subnet}', ${data.current_page - 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Previous</button>` : ''}
-                                    ${data.current_page < data.total_pages ? `<button onclick="loadSubnetDetailPage('${subnet}', ${data.current_page + 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Next</button>` : ''}
+                                    ${data.current_page > 1 ? `<button onclick="loadModalPage('${subnet}', ${data.current_page - 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Previous</button>` : ''}
+                                    ${data.current_page < data.total_pages ? `<button onclick="loadModalPage('${subnet}', ${data.current_page + 1})" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">Next</button>` : ''}
                                 </div>
                             </div>
-                        ` : ''}
-                    </div>
-                </div>
-            `;
+                        </td>
+                    </tr>
+                `;
+                modalIpList.innerHTML += paginationRow;
+            }
         }
 
-        // Load specific page for subnet detail
-        async function loadSubnetDetailPage(subnet, page) {
+        // Load specific page in modal
+        async function loadModalPage(subnet, page) {
             try {
-                const modalContent = document.getElementById('subnet-details-content');
+                const modalIpList = document.getElementById('modal-ip-list');
+                modalIpList.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-spinner fa-spin"></i> Loading...</td></tr>';
+                
                 const response = await fetch(`/api/fast-subnet-ips?subnet=${encodeURIComponent(subnet)}&page=${page}&per_page=50`);
                 const data = await response.json();
                 
-                renderSubnetDetailModal(data, subnet);
+                if (data.error) {
+                    modalIpList.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-red-500">${data.error}</td></tr>`;
+                    return;
+                }
+                
+                renderModalIPList(data, subnet);
             } catch (error) {
-                console.error('Error loading subnet detail page:', error);
+                console.error('Error loading modal page:', error);
                 showToast('Failed to load page', 'error');
+            }
+        }
+
+        // Close subnet modal
+        function closeSubnetModal() {
+            const modal = document.getElementById('subnet-detail-modal');
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+            currentSubnetData = null;
+        }
+
+        // IP Management Actions
+        async function reserveIP(ipAddress) {
+            try {
+                const hostname = prompt(`Enter hostname for IP ${ipAddress}:`);
+                if (!hostname) return;
+                
+                const response = await fetch('/api/reserve-ip', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ip_address: ipAddress,
+                        hostname: hostname,
+                        description: `Reserved on ${new Date().toISOString().split('T')[0]}`
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(`IP ${ipAddress} reserved successfully`, 'success');
+                    // Refresh current modal view
+                    if (currentSubnetData) {
+                        openFastSubnetDetail(currentSubnetData.subnet);
+                    }
+                } else {
+                    showToast(result.message || 'Failed to reserve IP', 'error');
+                }
+            } catch (error) {
+                console.error('Error reserving IP:', error);
+                showToast('Failed to reserve IP', 'error');
+            }
+        }
+
+        async function releaseIP(ipAddress) {
+            try {
+                if (!confirm(`Are you sure you want to release IP ${ipAddress}?`)) {
+                    return;
+                }
+                
+                const response = await fetch('/api/release-ip', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        ip_address: ipAddress
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(`IP ${ipAddress} released successfully`, 'success');
+                    // Refresh current modal view
+                    if (currentSubnetData) {
+                        openFastSubnetDetail(currentSubnetData.subnet);
+                    }
+                } else {
+                    showToast(result.message || 'Failed to release IP', 'error');
+                }
+            } catch (error) {
+                console.error('Error releasing IP:', error);
+                showToast('Failed to release IP', 'error');
+            }
+        }
+
+        // Modal quick action functions (placeholders)
+        function showAvailableIPs() {
+            showToast('Feature coming soon: Filter to show only available IPs', 'info');
+        }
+
+        function showReservedIPs() {
+            showToast('Feature coming soon: Filter to show only reserved IPs', 'info');
+        }
+
+        function exportSubnetData() {
+            if (currentSubnetData) {
+                showToast('Feature coming soon: Export subnet data to CSV', 'info');
+            } else {
+                showToast('No subnet selected', 'error');
+            }
+        }
+
+        function pingSubnet() {
+            if (currentSubnetData) {
+                showToast('Feature coming soon: Ping all IPs in subnet', 'info');
+            } else {
+                showToast('No subnet selected', 'error');
+            }
+        }
+
+        function editSubnetConfig() {
+            if (currentSubnetData) {
+                showToast('Feature coming soon: Edit subnet configuration', 'info');
+            } else {
+                showToast('No subnet selected', 'error');
+            }
+        }
+
+        function openBulkReservationModal() {
+            if (currentSubnetData) {
+                showToast('Feature coming soon: Bulk IP reservation', 'info');
+            } else {
+                showToast('No subnet selected', 'error');
             }
         }
 

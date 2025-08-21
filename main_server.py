@@ -3793,6 +3793,128 @@ def get_enhanced_subnets():
         print(f"Error getting enhanced subnets: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/reserve-ip', methods=['POST'])
+def api_reserve_ip():
+    """Reserve an IP address"""
+    try:
+        data = request.get_json()
+        ip_address = data.get('ip_address')
+        hostname = data.get('hostname', '')
+        description = data.get('description', '')
+        
+        if not ip_address:
+            return jsonify({'success': False, 'message': 'IP address is required'}), 400
+            
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Check if IP exists and is available
+        cursor.execute("""
+            SELECT * FROM ip_inventory 
+            WHERE ip_address = %s
+        """, (ip_address,))
+        
+        existing_ip = cursor.fetchone()
+        
+        if existing_ip:
+            # Update existing record
+            if existing_ip['hostname'] and existing_ip['hostname'].strip():
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': 'IP address is already in use'}), 400
+                
+            cursor.execute("""
+                UPDATE ip_inventory 
+                SET hostname = %s, description = %s, updated_at = NOW()
+                WHERE ip_address = %s
+            """, (hostname, description, ip_address))
+        else:
+            # Create new record - need to determine subnet
+            import ipaddress
+            
+            # Find the subnet this IP belongs to
+            cursor.execute("SELECT DISTINCT subnet FROM ip_inventory WHERE subnet IS NOT NULL")
+            subnets = [row['subnet'] for row in cursor.fetchall()]
+            
+            target_subnet = None
+            for subnet in subnets:
+                try:
+                    network = ipaddress.ip_network(subnet, strict=False)
+                    if ipaddress.ip_address(ip_address) in network:
+                        target_subnet = subnet
+                        break
+                except:
+                    continue
+            
+            if not target_subnet:
+                cursor.close()
+                connection.close()
+                return jsonify({'success': False, 'message': 'Could not determine subnet for this IP'}), 400
+            
+            cursor.execute("""
+                INSERT INTO ip_inventory (ip_address, hostname, description, subnet, vrf_vpn, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, 'DEFAULT-VRF', NOW(), NOW())
+            """, (ip_address, hostname, description, target_subnet))
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'success': True, 'message': f'IP {ip_address} reserved successfully'})
+        
+    except Exception as e:
+        print(f"❌ Error reserving IP: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/release-ip', methods=['POST'])
+def api_release_ip():
+    """Release an IP address"""
+    try:
+        data = request.get_json()
+        ip_address = data.get('ip_address')
+        
+        if not ip_address:
+            return jsonify({'success': False, 'message': 'IP address is required'}), 400
+            
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'success': False, 'message': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Check if IP exists
+        cursor.execute("""
+            SELECT * FROM ip_inventory 
+            WHERE ip_address = %s
+        """, (ip_address,))
+        
+        existing_ip = cursor.fetchone()
+        
+        if not existing_ip:
+            cursor.close()
+            connection.close()
+            return jsonify({'success': False, 'message': 'IP address not found'}), 404
+        
+        # Clear hostname and description to make it available
+        cursor.execute("""
+            UPDATE ip_inventory 
+            SET hostname = '', description = '', updated_at = NOW()
+            WHERE ip_address = %s
+        """, (ip_address,))
+        
+        connection.commit()
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'success': True, 'message': f'IP {ip_address} released successfully'})
+        
+    except Exception as e:
+        print(f"❌ Error releasing IP: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 # Existing routes continue...
 if __name__ == '__main__':
     print("\n" + "="*60)
