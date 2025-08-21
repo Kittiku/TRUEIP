@@ -1939,13 +1939,13 @@ def api_smart_subnet_recommendations():
             
         cursor = connection.cursor(dictionary=True)
         
-        # Get all subnets with detailed analysis
+        # Get all subnets with detailed analysis - using hostname to determine actual usage
         cursor.execute("""
             SELECT 
                 subnet,
-                COUNT(*) as total_used,
-                SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) as used_count,
-                SUM(CASE WHEN status = 'reserved' THEN 1 ELSE 0 END) as reserved_count,
+                COUNT(*) as total_in_db,
+                SUM(CASE WHEN hostname != '' AND hostname IS NOT NULL THEN 1 ELSE 0 END) as used_count,
+                SUM(CASE WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 1 ELSE 0 END) as reserved_count,
                 GROUP_CONCAT(DISTINCT vrf_vpn) as vrfs,
                 MAX(updated_at) as last_activity
             FROM ip_inventory 
@@ -3229,35 +3229,100 @@ def get_subnet_details(subnet_name):
             'updated_at': None
         }
         
-        # Get all IPs in this subnet
+        # Get all IPs in this subnet with REAL status calculation
         cursor.execute("""
-            SELECT ip_address, status, hostname, description, vrf_vpn,
-                   created_at, updated_at
+            SELECT 
+                ip_address, 
+                hostname, 
+                description, 
+                vrf_vpn,
+                created_at, 
+                updated_at,
+                CASE 
+                    WHEN hostname != '' AND hostname IS NOT NULL THEN 'used'
+                    WHEN (hostname = '' OR hostname IS NULL) AND description LIKE '%reserved%' THEN 'reserved'
+                    ELSE 'available'
+                END as status
             FROM ip_inventory 
             WHERE subnet = %s 
             ORDER BY INET_ATON(ip_address)
         """, (subnet_name,))
-        ips = cursor.fetchall()
+        existing_ips = cursor.fetchall()
         
-        # Calculate subnet statistics
+        # Create a dictionary for quick lookup of existing IPs
+        existing_ip_dict = {ip['ip_address']: ip for ip in existing_ips}
+        
+        # Generate ALL possible IPs in the subnet
+        network = ipaddress.ip_network(subnet_name, strict=False)
+        all_ips = []
+        
+        # For each possible IP in the subnet
+        for ip_obj in network.hosts():
+            ip_str = str(ip_obj)
+            
+            if ip_str in existing_ip_dict:
+                # IP exists in database - use database data
+                ip_data = existing_ip_dict[ip_str]
+                ip_data['created_at'] = ip_data['created_at'].isoformat() if ip_data['created_at'] else None
+                ip_data['updated_at'] = ip_data['updated_at'].isoformat() if ip_data['updated_at'] else None
+                all_ips.append(ip_data)
+            else:
+                # IP not in database - mark as available
+                all_ips.append({
+                    'ip_address': ip_str,
+                    'hostname': '',
+                    'description': '',
+                    'vrf_vpn': '',
+                    'created_at': None,
+                    'updated_at': None,
+                    'status': 'available'
+                })
+        
+        # Use the complete IP list for calculations
+        ips = all_ips
+        
+        # Calculate subnet statistics based on ALL possible IPs in subnet
         try:
             network = ipaddress.ip_network(subnet_name, strict=False)
-            total_ips = network.num_addresses - 2  # Exclude network and broadcast
+            theoretical_total = network.num_addresses - 2  # Exclude network and broadcast
             
-            # Count IPs by status
-            used_count = len([ip for ip in ips if ip['status'] == 'used'])
-            reserved_count = len([ip for ip in ips if ip['status'] == 'reserved'])
-            available_count = total_ips - used_count - reserved_count
+            # Count IPs by status from the complete IP list
+            actual_used_count = len([ip for ip in ips if ip['status'] == 'used'])
+            actual_reserved_count = len([ip for ip in ips if ip['status'] == 'reserved'])
+            actual_available_count = len([ip for ip in ips if ip['status'] == 'available'])
+            
+            # Total IPs is the theoretical total (all possible host IPs)
+            actual_total_ips = len(ips)  # This should equal theoretical_total
+            
+            # Create VRF summary from existing IPs only
+            vrf_summary = {}
+            for ip in existing_ips:  # Use existing_ips for VRF summary
+                vrf = ip['vrf_vpn'] or 'Default'
+                if vrf not in vrf_summary:
+                    vrf_summary[vrf] = {'used': 0, 'available': 0, 'reserved': 0}
+                
+                if ip['hostname'] and ip['hostname'].strip():
+                    vrf_summary[vrf]['used'] += 1
+                elif ip['description'] and 'reserved' in ip['description'].lower():
+                    vrf_summary[vrf]['reserved'] += 1
+                else:
+                    vrf_summary[vrf]['available'] += 1
             
             subnet_stats = {
-                'total_ips': total_ips,
-                'used_ips': used_count,
-                'reserved_ips': reserved_count,
-                'available_ips': available_count,
-                'utilization': round((used_count / total_ips) * 100, 1) if total_ips > 0 else 0
+                'total_ips': actual_total_ips,  # Use actual count from database
+                'used_ips': actual_used_count,
+                'reserved_ips': actual_reserved_count,
+                'available_ips': actual_available_count,
+                'theoretical_total': theoretical_total,  # Keep theoretical for reference
+                'utilization': round((actual_used_count / actual_total_ips) * 100, 1) if actual_total_ips > 0 else 0,
+                'utilization_percent': round((actual_used_count / actual_total_ips) * 100, 1) if actual_total_ips > 0 else 0,
+                'network_address': str(network.network_address),
+                'broadcast_address': str(network.broadcast_address),
+                'subnet_mask': str(network.netmask),
+                'prefix_length': network.prefixlen
             }
             
-            # Add statistics to subnet data
+            # Add statistics and network info to subnet data
             subnet.update(subnet_stats)
             
         except ValueError as e:
@@ -3269,11 +3334,104 @@ def get_subnet_details(subnet_name):
         return jsonify({
             'success': True,
             'subnet': subnet,
-            'ips': ips
+            'ips': ips,
+            'vrf_summary': vrf_summary,
+            'network_address': subnet_stats['network_address'],
+            'broadcast_address': subnet_stats['broadcast_address'],
+            'subnet_mask': subnet_stats['subnet_mask'],
+            'prefix_length': subnet_stats['prefix_length'],
+            'total_ips': actual_total_ips,  # Use actual count
+            'used_ips': actual_used_count,
+            'reserved_ips': actual_reserved_count,
+            'available_ips': actual_available_count,
+            'theoretical_total': theoretical_total,  # Add theoretical total for reference
+            'utilization_percent': subnet_stats['utilization_percent']
+        })
+        
+    except ValueError as e:
+        return jsonify({'error': f'Invalid subnet format: {e}'}), 400
+    except Exception as e:
+        print(f"Error getting subnet details: {e}")
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if 'connection' in locals() and connection:
+            cursor.close()
+            connection.close()
+
+@app.route('/api/subnet-all-ips/<path:subnet_name>')
+def get_subnet_all_ips(subnet_name):
+    """Get ALL IP addresses in a subnet (including available ones)"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        cursor = connection.cursor(dictionary=True)
+        
+        # Parse subnet to get all possible IPs
+        try:
+            network = ipaddress.ip_network(subnet_name, strict=False)
+        except ValueError as e:
+            return jsonify({'error': f'Invalid subnet format: {e}'}), 400
+        
+        # Get existing IPs from database
+        cursor.execute("""
+            SELECT 
+                ip_address, 
+                hostname, 
+                description, 
+                vrf_vpn,
+                created_at, 
+                updated_at
+            FROM ip_inventory 
+            WHERE subnet = %s
+        """, (subnet_name,))
+        existing_ips = {row['ip_address']: row for row in cursor.fetchall()}
+        
+        # Generate all possible IPs in subnet
+        all_ips = []
+        for ip in network.hosts():
+            ip_str = str(ip)
+            
+            if ip_str in existing_ips:
+                # IP exists in database
+                ip_data = existing_ips[ip_str]
+                status = 'used' if ip_data['hostname'] and ip_data['hostname'].strip() else \
+                        'reserved' if ip_data['description'] and 'reserved' in ip_data['description'].lower() else 'available'
+                
+                all_ips.append({
+                    'ip_address': ip_str,
+                    'status': status,
+                    'hostname': ip_data['hostname'] or '',
+                    'description': ip_data['description'] or '',
+                    'vrf_vpn': ip_data['vrf_vpn'] or 'Default',
+                    'created_at': ip_data['created_at'],
+                    'updated_at': ip_data['updated_at']
+                })
+            else:
+                # IP doesn't exist in database = available
+                all_ips.append({
+                    'ip_address': ip_str,
+                    'status': 'available',
+                    'hostname': '',
+                    'description': '',
+                    'vrf_vpn': 'Default',
+                    'created_at': None,
+                    'updated_at': None
+                })
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({
+            'success': True,
+            'subnet': subnet_name,
+            'total_ips': len(all_ips),
+            'ips': all_ips
         })
         
     except Exception as e:
-        print(f"Error getting subnet details: {e}")
+        print(f"Error getting all subnet IPs: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/reserve-next-ip', methods=['POST'])

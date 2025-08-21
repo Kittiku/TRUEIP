@@ -684,95 +684,6 @@
                         </div>
                     </div>
 
-                    <!-- Search and Filter Section -->
-                    <div class="mb-6 bg-gray-50 rounded-lg p-4">
-                        <div class="flex flex-col md:flex-row items-center space-y-4 md:space-y-0 md:space-x-4">
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Search Subnets:</label>
-                                <div class="relative">
-                                    <input type="text" id="subnet-search" 
-                                           placeholder="Search by subnet, description, VRF, or VLAN..." 
-                                           class="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                                    <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Filter by CIDR:</label>
-                                <div class="flex space-x-2">
-                                    <select id="cidr-filter" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-                                        <option value="">All CIDR ranges</option>
-                                        <option value="16">/16 (65,536 addresses)</option>
-                                        <option value="20">/20 (4,096 addresses)</option>
-                                        <option value="22">/22 (1,024 addresses)</option>
-                                        <option value="24">/24 (256 addresses)</option>
-                                        <option value="25">/25 (128 addresses)</option>
-                                        <option value="26">/26 (64 addresses)</option>
-                                        <option value="27">/27 (32 addresses)</option>
-                                        <option value="28">/28 (16 addresses)</option>
-                                        <option value="29">/29 (8 addresses)</option>
-                                        <option value="30">/30 (4 addresses)</option>
-                                    </select>
-                                    <button onclick="applySubnetFilters()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                                        <i class="fas fa-filter mr-2"></i>Filter
-                                    </button>
-                                    <button onclick="clearSubnetFilters()" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                                        <i class="fas fa-times mr-2"></i>Clear
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mt-3 flex items-center justify-between">
-                            <div class="text-sm text-gray-600">
-                                Quick filters: 
-                                <button onclick="applyQuickFilter('24')" class="text-blue-600 hover:underline mx-1">/24</button>
-                                <button onclick="applyQuickFilter('26')" class="text-blue-600 hover:underline mx-1">/26</button>
-                                <button onclick="applyQuickFilter('30')" class="text-blue-600 hover:underline mx-1">/30</button>
-                                <span class="mx-2">|</span>
-                                <button onclick="applyQuickSearch('guest')" class="text-green-600 hover:underline mx-1">Guest</button>
-                                <button onclick="applyQuickSearch('corp')" class="text-green-600 hover:underline mx-1">Corp</button>
-                                <button onclick="applyQuickSearch('wifi')" class="text-green-600 hover:underline mx-1">WiFi</button>
-                            </div>
-                            <div class="text-sm text-gray-500" id="search-results-count">
-                                <!-- Search results count will appear here -->
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- CIDR Filter -->
-                    <div class="mb-6 hidden">
-                        <div class="flex items-center space-x-4">
-                            <div class="flex-1">
-                                <label class="block text-sm font-medium text-gray-700 mb-2">Filter by CIDR:</label>
-                                <div class="flex space-x-2">
-                                    <select id="cidr-input" class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">
-                                        <option value="16">/16 (65,536 addresses)</option>
-                                        <option value="20">/20 (4,096 addresses)</option>
-                                        <option value="22">/22 (1,024 addresses)</option>
-                                        <option value="24" selected>/24 (256 addresses)</option>
-                                        <option value="25">/25 (128 addresses)</option>
-                                        <option value="26">/26 (64 addresses)</option>
-                                        <option value="27">/27 (32 addresses)</option>
-                                        <option value="28">/28 (16 addresses)</option>
-                                        <option value="29">/29 (8 addresses)</option>
-                                        <option value="30">/30 (4 addresses)</option>
-                                    </select>
-                                    <button onclick="applyCIDRFilter()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                                        <i class="fas fa-filter mr-2"></i>Filter
-                                    </button>
-                                    <button onclick="clearCIDRFilter()" class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700">
-                                        <i class="fas fa-sync mr-2"></i>Refresh
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="text-sm text-gray-500">
-                                Quick filters: 
-                                <button onclick="setQuickCIDR('24')" class="text-blue-600 hover:underline mx-1">/24</button>
-                                <button onclick="setQuickCIDR('26')" class="text-blue-600 hover:underline mx-1">/26</button>
-                                <button onclick="setQuickCIDR('30')" class="text-blue-600 hover:underline mx-1">/30</button>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Subnet Grid -->
                     <div id="subnet-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         <div class="text-center py-8"><i class="fas fa-spinner loading-spinner text-2xl"></i><p class="mt-2">Loading...</p></div>
@@ -2162,35 +2073,6 @@
             }
         }
 
-        // CIDR Filter functions
-        function applyCIDRFilter() {
-            loadSubnetManagement();
-            showToast('CIDR filter applied', 'success');
-        }
-
-        function clearCIDRFilter() {
-            document.getElementById('cidr-input').value = '24';
-            loadSubnetManagement();
-            showToast('Refreshed with /24 filter', 'success');
-        }
-
-        function setQuickCIDR(cidr) {
-            document.getElementById('cidr-input').value = cidr;
-            loadSubnetManagement();
-            showToast(`Filtered by /${cidr}`, 'success');
-        }
-
-        // Add event listener for dropdown change
-        document.addEventListener('DOMContentLoaded', function() {
-            const cidrSelect = document.getElementById('cidr-input');
-            if (cidrSelect) {
-                cidrSelect.addEventListener('change', function() {
-                    loadSubnetManagement();
-                    showToast(`Switched to /${this.value} view`, 'success');
-                });
-            }
-        });
-
         // IP Filter functions
         function applyIPFilters() {
             loadIPList(1); // Reset to first page when filtering
@@ -2637,7 +2519,6 @@
                     
                     window.allSubnets = data.subnets || [];
                     renderSubnetList(window.allSubnets);
-                    updateSearchResultsCount(window.allSubnets.length);
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -2722,65 +2603,6 @@
                 `;
             }).join('');
         }
-
-        // Enhanced subnet search and filter functions
-        function applySubnetFilters() {
-            const searchTerm = document.getElementById('subnet-search').value.toLowerCase();
-            const cidrFilter = document.getElementById('cidr-filter').value;
-            
-            if (!window.allSubnets) return;
-            
-            let filteredSubnets = window.allSubnets.filter(subnet => {
-                // Search filter
-                const matchesSearch = !searchTerm || 
-                    subnet.subnet.toLowerCase().includes(searchTerm) ||
-                    (subnet.description && subnet.description.toLowerCase().includes(searchTerm)) ||
-                    (subnet.vrf && subnet.vrf.toLowerCase().includes(searchTerm)) ||
-                    (subnet.vlan && subnet.vlan.toString().includes(searchTerm));
-                
-                // CIDR filter
-                const matchesCIDR = !cidrFilter || subnet.subnet.includes(`/${cidrFilter}`);
-                
-                return matchesSearch && matchesCIDR;
-            });
-            
-            renderSubnetList(filteredSubnets);
-            updateSearchResultsCount(filteredSubnets.length);
-        }
-
-        function clearSubnetFilters() {
-            document.getElementById('subnet-search').value = '';
-            document.getElementById('cidr-filter').value = '';
-            if (window.allSubnets) {
-                renderSubnetList(window.allSubnets);
-                updateSearchResultsCount(window.allSubnets.length);
-            }
-        }
-
-        function applyQuickFilter(cidr) {
-            document.getElementById('cidr-filter').value = cidr;
-            applySubnetFilters();
-        }
-
-        function applyQuickSearch(term) {
-            document.getElementById('subnet-search').value = term;
-            applySubnetFilters();
-        }
-
-        function updateSearchResultsCount(count) {
-            const countElement = document.getElementById('search-results-count');
-            if (countElement) {
-                countElement.textContent = `${count} subnet${count !== 1 ? 's' : ''} found`;
-            }
-        }
-
-        // Add event listeners for real-time search
-        document.addEventListener('DOMContentLoaded', function() {
-            const searchInput = document.getElementById('subnet-search');
-            if (searchInput) {
-                searchInput.addEventListener('input', applySubnetFilters);
-            }
-        });
 
         // Subnet management functions
         function openSubnetDetails(subnetName) {
