@@ -420,7 +420,7 @@ def subnet_manager():
 @app.route('/vrf-monitoring')
 def vrf_monitoring():
     """VRF Monitoring page"""
-    return render_template('subnet_monitor.html')
+    return render_template('vrf_monitoring.html')
 
 @app.route('/ip-auto-allocation')
 def ip_auto_allocation():
