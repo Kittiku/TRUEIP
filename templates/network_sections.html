@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Sections - IPAM System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .section-card {
+            transition: transform 0.2s ease-in-out;
+            border-left: 4px solid;
+            cursor: pointer;
+        }
+        .section-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .section-icon {
+            font-size: 2rem;
+            margin-right: 1rem;
+        }
+        .stats-badge {
+            font-size: 0.875rem;
+        }
+        .breadcrumb {
+            background: none;
+            padding: 0;
+        }
+        .section-color-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        .add-section-btn {
+            background: linear-gradient(45deg, #007bff, #0056b3);
+            border: none;
+            transition: all 0.3s ease;
+        }
+        .add-section-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 123, 255, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-network-wired me-2"></i>IPAM System
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/ip_management">IP Management</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/subnet_manager">Subnet Manager</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/network_sections">Network Sections</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="/">Home</a></li>
+                        <li class="breadcrumb-item active">Network Sections</li>
+                    </ol>
+                </nav>
+                
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h2 class="mb-1">
+                            <i class="fas fa-layer-group text-primary me-2"></i>
+                            Network Sections
+                        </h2>
+                        <p class="text-muted mb-0">Manage your network organization and IP allocation scopes</p>
+                    </div>
+                    <button class="btn btn-primary add-section-btn" data-bs-toggle="modal" data-bs-target="#addSectionModal">
+                        <i class="fas fa-plus me-2"></i>Add Section
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Overview -->
+        <div class="row mb-4" id="statisticsOverview">
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <i class="fas fa-layer-group text-primary mb-2" style="font-size: 2rem;"></i>
+                        <h4 class="card-title mb-1" id="totalSections">-</h4>
+                        <p class="card-text text-muted">Total Sections</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <i class="fas fa-project-diagram text-success mb-2" style="font-size: 2rem;"></i>
+                        <h4 class="card-title mb-1" id="totalSubnets">-</h4>
+                        <p class="card-text text-muted">Total Subnets</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <i class="fas fa-network-wired text-info mb-2" style="font-size: 2rem;"></i>
+                        <h4 class="card-title mb-1" id="totalIPs">-</h4>
+                        <p class="card-text text-muted">Total IPs</p>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <i class="fas fa-chart-pie text-warning mb-2" style="font-size: 2rem;"></i>
+                        <h4 class="card-title mb-1" id="utilizationRate">-</h4>
+                        <p class="card-text text-muted">Utilization</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sections Grid -->
+        <div class="row" id="sectionsContainer">
+            <!-- Loading indicator -->
+            <div class="col-12 text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Loading network sections...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Section Modal -->
+    <div class="modal fade" id="addSectionModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Network Section</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addSectionForm">
+                        <div class="mb-3">
+                            <label for="sectionName" class="form-label">Section Name <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="sectionName" required>
+                            <div class="form-text">Enter a unique name for this network section</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sectionDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="sectionDescription" rows="3"></textarea>
+                            <div class="form-text">Optional description for this section</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="sectionColor" class="form-label">Color</label>
+                            <input type="color" class="form-control form-control-color" id="sectionColor" value="#007bff">
+                            <div class="form-text">Choose a color to identify this section</div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addSection()">
+                        <i class="fas fa-plus me-1"></i>Add Section
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section Details Modal -->
+    <div class="modal fade" id="sectionDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sectionDetailsTitle">Section Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="sectionDetailsBody">
+                    <!-- Content will be loaded dynamically -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="manageSectionBtn">
+                        <i class="fas fa-cog me-1"></i>Manage Section
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let sections = [];
+
+        // Load sections on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSections();
+        });
+
+        async function loadSections() {
+            try {
+                const response = await fetch('/api/sections');
+                const data = await response.json();
+                
+                if (data.sections) {
+                    sections = data.sections;
+                    displaySections(sections);
+                    updateStatistics();
+                } else {
+                    throw new Error(data.error || 'Failed to load sections');
+                }
+            } catch (error) {
+                console.error('Error loading sections:', error);
+                document.getElementById('sectionsContainer').innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Error loading network sections: ${error.message}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        function displaySections(sectionsData) {
+            const container = document.getElementById('sectionsContainer');
+            
+            if (sectionsData.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-info text-center">
+                            <i class="fas fa-info-circle me-2"></i>
+                            No network sections found. Click "Add Section" to create your first network section.
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+            sectionsData.forEach(section => {
+                html += `
+                    <div class="col-lg-4 col-md-6 mb-4">
+                        <div class="card section-card h-100 border-0 shadow-sm" 
+                             style="border-left-color: ${section.color};"
+                             onclick="showSectionDetails(${section.id})">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center mb-3">
+                                    <div class="section-color-indicator" style="background-color: ${section.color};"></div>
+                                    <h5 class="card-title mb-0">${section.name}</h5>
+                                </div>
+                                
+                                <p class="card-text text-muted mb-3">${section.description || 'No description'}</p>
+                                
+                                <div class="row text-center">
+                                    <div class="col-4">
+                                        <div class="stats-badge">
+                                            <i class="fas fa-project-diagram text-primary"></i>
+                                            <div class="fw-bold">-</div>
+                                            <small class="text-muted">Subnets</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="stats-badge">
+                                            <i class="fas fa-network-wired text-success"></i>
+                                            <div class="fw-bold">-</div>
+                                            <small class="text-muted">IPs</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="stats-badge">
+                                            <i class="fas fa-chart-line text-info"></i>
+                                            <div class="fw-bold">-%</div>
+                                            <small class="text-muted">Used</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-transparent border-0">
+                                <small class="text-muted">
+                                    <i class="fas fa-clock me-1"></i>
+                                    Created: ${new Date(section.created_at).toLocaleDateString()}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function updateStatistics() {
+            // Update overall statistics
+            document.getElementById('totalSections').textContent = sections.length;
+            // TODO: Load actual subnet and IP counts from API
+            document.getElementById('totalSubnets').textContent = '-';
+            document.getElementById('totalIPs').textContent = '-';
+            document.getElementById('utilizationRate').textContent = '-%';
+        }
+
+        async function addSection() {
+            const name = document.getElementById('sectionName').value.trim();
+            const description = document.getElementById('sectionDescription').value.trim();
+            const color = document.getElementById('sectionColor').value;
+
+            if (!name) {
+                alert('Please enter a section name');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/sections', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        description: description,
+                        color: color
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Close modal and reload sections
+                    bootstrap.Modal.getInstance(document.getElementById('addSectionModal')).hide();
+                    document.getElementById('addSectionForm').reset();
+                    document.getElementById('sectionColor').value = '#007bff';
+                    
+                    // Show success message
+                    showAlert('success', 'Section added successfully!');
+                    
+                    // Reload sections
+                    loadSections();
+                } else {
+                    throw new Error(data.error || 'Failed to add section');
+                }
+            } catch (error) {
+                console.error('Error adding section:', error);
+                showAlert('danger', 'Error adding section: ' + error.message);
+            }
+        }
+
+        async function showSectionDetails(sectionId) {
+            try {
+                // Get section info
+                const section = sections.find(s => s.id === sectionId);
+                if (!section) return;
+
+                // Load section subnets and IPs
+                const [subnetsResponse, ipsResponse] = await Promise.all([
+                    fetch(`/api/sections/${sectionId}/subnets`),
+                    fetch(`/api/sections/${sectionId}/ips?limit=10`)
+                ]);
+
+                const subnetsData = await subnetsResponse.json();
+                const ipsData = await ipsResponse.json();
+
+                // Update modal content
+                document.getElementById('sectionDetailsTitle').innerHTML = `
+                    <div class="section-color-indicator" style="background-color: ${section.color};"></div>
+                    ${section.name}
+                `;
+
+                const modalBody = document.getElementById('sectionDetailsBody');
+                modalBody.innerHTML = `
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h6>Description</h6>
+                            <p class="text-muted">${section.description || 'No description'}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Statistics</h6>
+                            <p class="text-muted">
+                                Subnets: ${subnetsData.subnets ? subnetsData.subnets.length : 0}<br>
+                                IPs: ${ipsData.ips ? ipsData.ips.length : 0}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <h6>Recent Subnets</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Subnet</th>
+                                    <th>Description</th>
+                                    <th>VLAN</th>
+                                    <th>IPs Used</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${subnetsData.subnets && subnetsData.subnets.length > 0 ? 
+                                    subnetsData.subnets.slice(0, 5).map(subnet => `
+                                        <tr>
+                                            <td><code>${subnet.subnet}</code></td>
+                                            <td>${subnet.description || '-'}</td>
+                                            <td>${subnet.vlan || '-'}</td>
+                                            <td>${subnet.used_count || 0}</td>
+                                        </tr>
+                                    `).join('') :
+                                    '<tr><td colspan="4" class="text-center text-muted">No subnets in this section</td></tr>'
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                // Update manage button
+                document.getElementById('manageSectionBtn').onclick = () => {
+                    window.location.href = `/section-management?section_id=${sectionId}`;
+                };
+
+                // Show modal
+                new bootstrap.Modal(document.getElementById('sectionDetailsModal')).show();
+
+            } catch (error) {
+                console.error('Error loading section details:', error);
+                showAlert('danger', 'Error loading section details: ' + error.message);
+            }
+        }
+
+        function showAlert(type, message) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            // Insert at the top of the container
+            const container = document.querySelector('.container-fluid');
+            container.insertBefore(alertDiv, container.firstChild);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

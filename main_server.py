@@ -64,21 +64,38 @@ def init_database():
         if connection:
             cursor = connection.cursor()
             
+            # Create network sections table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS network_sections (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL UNIQUE,
+                    description TEXT,
+                    color VARCHAR(7) DEFAULT '#007bff',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_name (name)
+                )
+            ''')
+            
             # Create IP inventory table
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS ip_inventory (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    ip_address VARCHAR(15) NOT NULL UNIQUE,
+                    ip_address VARCHAR(15) NOT NULL,
                     subnet VARCHAR(18) NOT NULL,
+                    section_id INT,
                     status ENUM('used', 'available', 'reserved') DEFAULT 'available',
                     vrf_vpn VARCHAR(50),
                     hostname VARCHAR(100),
                     description TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (section_id) REFERENCES network_sections(id) ON DELETE SET NULL,
                     INDEX idx_ip_address (ip_address),
                     INDEX idx_subnet (subnet),
-                    INDEX idx_status (status)
+                    INDEX idx_status (status),
+                    INDEX idx_section_id (section_id),
+                    UNIQUE KEY unique_ip_section (ip_address, section_id)
                 )
             ''')
             
@@ -86,8 +103,9 @@ def init_database():
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS subnets (
                     id INT AUTO_INCREMENT PRIMARY KEY,
-                    subnet VARCHAR(18) NOT NULL UNIQUE,
+                    subnet VARCHAR(18) NOT NULL,
                     description TEXT,
+                    section_id INT,
                     section VARCHAR(50),
                     vlan VARCHAR(50),
                     device VARCHAR(100),
@@ -106,10 +124,26 @@ def init_database():
                     irr VARCHAR(50),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (section_id) REFERENCES network_sections(id) ON DELETE SET NULL,
                     INDEX idx_subnet (subnet),
                     INDEX idx_section (section),
-                    INDEX idx_vrf (vrf)
+                    INDEX idx_section_id (section_id),
+                    INDEX idx_vrf (vrf),
+                    UNIQUE KEY unique_subnet_section (subnet, section_id)
                 )
+            ''')
+            
+            # Insert default network sections
+            cursor.execute('''
+                INSERT IGNORE INTO network_sections (name, description, color) VALUES
+                ('Default', 'Default network section', '#007bff'),
+                ('Gi', 'All Gi Path', '#28a745'),
+                ('True', 'True Network', '#dc3545'),
+                ('Dtac', 'Dtac Network', '#fd7e14'),
+                ('True-Online', 'True-Online Network', '#20c997'),
+                ('Public IP', 'Public IP addresses', '#6f42c1'),
+                ('TESTBED', 'Test environment', '#ffc107'),
+                ('Delete_True', 'Archived True networks', '#6c757d')
             ''')
             
             connection.commit()
@@ -120,8 +154,46 @@ def init_database():
     except Error as e:
         print(f"❌ Database initialization error: {e}")
 
-def get_ip_data(limit=100):
-    """Get IP data from database"""
+def get_network_sections():
+    """Get all network sections"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return []
+            
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM network_sections ORDER BY name")
+        results = cursor.fetchall()
+        
+        cursor.close()
+        connection.close()
+        return results
+        
+    except Error as e:
+        print(f"❌ Error getting network sections: {e}")
+        return []
+
+def get_section_by_name(section_name):
+    """Get section ID by name"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return None
+            
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT id FROM network_sections WHERE name = %s", (section_name,))
+        result = cursor.fetchone()
+        
+        cursor.close()
+        connection.close()
+        return result['id'] if result else None
+        
+    except Error as e:
+        print(f"❌ Error getting section: {e}")
+        return None
+
+def get_ip_data(limit=100, section_id=None):
+    """Get IP data from database with optional section filter"""
     try:
         connection = get_db_connection()
         if not connection:
@@ -129,16 +201,32 @@ def get_ip_data(limit=100):
             
         cursor = connection.cursor(dictionary=True)
         
-        query = """
-            SELECT 
-                id, ip_address, subnet, status, vrf_vpn, hostname, 
-                description, created_at, updated_at
-            FROM ip_inventory 
-            ORDER BY INET_ATON(ip_address)
-            LIMIT %s
-        """
+        if section_id:
+            query = """
+                SELECT 
+                    i.id, i.ip_address, i.subnet, i.status, i.vrf_vpn, i.hostname, 
+                    i.description, i.created_at, i.updated_at, i.section_id,
+                    s.name as section_name, s.color as section_color
+                FROM ip_inventory i
+                LEFT JOIN network_sections s ON i.section_id = s.id
+                WHERE i.section_id = %s OR i.section_id IS NULL
+                ORDER BY INET_ATON(i.ip_address)
+                LIMIT %s
+            """
+            cursor.execute(query, (section_id, limit))
+        else:
+            query = """
+                SELECT 
+                    i.id, i.ip_address, i.subnet, i.status, i.vrf_vpn, i.hostname, 
+                    i.description, i.created_at, i.updated_at, i.section_id,
+                    s.name as section_name, s.color as section_color
+                FROM ip_inventory i
+                LEFT JOIN network_sections s ON i.section_id = s.id
+                ORDER BY INET_ATON(i.ip_address)
+                LIMIT %s
+            """
+            cursor.execute(query, (limit,))
         
-        cursor.execute(query, (limit,))
         results = cursor.fetchall()
         
         # Convert datetime objects to strings
@@ -293,6 +381,16 @@ def get_statistics():
 def index():
     """Advanced IP Management Homepage"""
     return render_template('ip_management_clean.html')
+
+@app.route('/network-sections')
+def network_sections():
+    """Network Sections Management page"""
+    return render_template('network_sections.html')
+
+@app.route('/section-management')
+def section_management():
+    """Section Management page"""
+    return render_template('section_management.html')
 
 @app.route('/csv-import')
 def csv_import_page():
@@ -680,7 +778,7 @@ def api_ip_list():
 
 @app.route('/api/add-ip', methods=['POST'])
 def api_add_ip():
-    """API to add new IP"""
+    """API to add new IP with section support"""
     try:
         data = request.get_json()
         
@@ -708,23 +806,44 @@ def api_add_ip():
             
         cursor = connection.cursor()
         
-        # Check if IP already exists
-        cursor.execute("SELECT id FROM ip_inventory WHERE ip_address = %s", (data['ip_address'],))
+        # Get section_id if section is provided
+        section_id = None
+        if 'section' in data and data['section']:
+            section_id = get_section_by_name(data['section'])
+            if section_id is None:
+                cursor.close()
+                connection.close()
+                return jsonify({'error': f'Section "{data["section"]}" not found'}), 400
+        
+        # Check if IP already exists in the same section
+        if section_id:
+            cursor.execute(
+                "SELECT id FROM ip_inventory WHERE ip_address = %s AND section_id = %s", 
+                (data['ip_address'], section_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM ip_inventory WHERE ip_address = %s AND section_id IS NULL", 
+                (data['ip_address'],)
+            )
+            
         if cursor.fetchone():
             cursor.close()
             connection.close()
-            return jsonify({'error': 'IP address already exists'}), 409
+            section_name = data.get('section', 'Default')
+            return jsonify({'error': f'IP address already exists in section "{section_name}"'}), 409
         
         # Insert new IP
         insert_query = """
             INSERT INTO ip_inventory 
-            (ip_address, subnet, status, vrf_vpn, hostname, description)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            (ip_address, subnet, section_id, status, vrf_vpn, hostname, description)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         
         values = (
             data['ip_address'],
             data['subnet'],
+            section_id,
             data['status'],
             data.get('vrf_vpn', ''),
             data.get('hostname', ''),
@@ -742,6 +861,202 @@ def api_add_ip():
         
     except Error as e:
         print(f"❌ Error adding IP: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# ================== NETWORK SECTIONS API ==================
+@app.route('/api/sections')
+def api_get_sections():
+    """API to get all network sections"""
+    try:
+        sections = get_network_sections()
+        return jsonify({'sections': sections})
+    except Exception as e:
+        print(f"❌ Error getting sections: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sections', methods=['POST'])
+def api_add_section():
+    """API to add new network section"""
+    try:
+        data = request.get_json()
+        
+        if not data.get('name'):
+            return jsonify({'error': 'Section name is required'}), 400
+            
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor()
+        
+        # Check if section already exists
+        cursor.execute("SELECT id FROM network_sections WHERE name = %s", (data['name'],))
+        if cursor.fetchone():
+            cursor.close()
+            connection.close()
+            return jsonify({'error': 'Section already exists'}), 409
+        
+        # Insert new section
+        insert_query = """
+            INSERT INTO network_sections (name, description, color)
+            VALUES (%s, %s, %s)
+        """
+        
+        values = (
+            data['name'],
+            data.get('description', ''),
+            data.get('color', '#007bff')
+        )
+        
+        cursor.execute(insert_query, values)
+        connection.commit()
+        
+        new_id = cursor.lastrowid
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'success': True, 'id': new_id, 'message': 'Section added successfully'})
+        
+    except Error as e:
+        print(f"❌ Error adding section: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sections/<int:section_id>/subnets')
+def api_get_section_subnets(section_id):
+    """API to get subnets in a specific section"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        query = """
+            SELECT 
+                s.id, s.subnet, s.description, s.vlan, s.device, s.vrf,
+                s.customer, s.location, s.created_at,
+                COUNT(i.id) as ip_count,
+                COUNT(CASE WHEN i.status = 'used' THEN 1 END) as used_count,
+                COUNT(CASE WHEN i.status = 'reserved' THEN 1 END) as reserved_count
+            FROM subnets s
+            LEFT JOIN ip_inventory i ON s.subnet = i.subnet AND i.section_id = %s
+            WHERE s.section_id = %s
+            GROUP BY s.id, s.subnet, s.description, s.vlan, s.device, s.vrf, s.customer, s.location, s.created_at
+            ORDER BY s.subnet
+        """
+        
+        cursor.execute(query, (section_id, section_id))
+        results = cursor.fetchall()
+        
+        # Convert datetime objects to strings
+        for row in results:
+            if row['created_at']:
+                row['created_at'] = row['created_at'].isoformat()
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'subnets': results})
+        
+    except Error as e:
+        print(f"❌ Error getting section subnets: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/sections/<int:section_id>/ips')
+def api_get_section_ips(section_id):
+    """API to get IPs in a specific section"""
+    try:
+        limit = int(request.args.get('limit', 100))
+        page = int(request.args.get('page', 1))
+        
+        ip_data = get_ip_data(limit, section_id)
+        
+        return jsonify({
+            'ips': ip_data,
+            'section_id': section_id,
+            'page': page,
+            'limit': limit
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting section IPs: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/subnets', methods=['POST'])
+def api_add_subnet():
+    """API to add new subnet with section support"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('subnet'):
+            return jsonify({'error': 'Subnet is required'}), 400
+        
+        # Validate subnet format
+        try:
+            ipaddress.ip_network(data['subnet'], strict=False)
+        except ValueError:
+            return jsonify({'error': 'Invalid subnet format'}), 400
+        
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor()
+        
+        # Get section_id if provided
+        section_id = data.get('section_id')
+        if section_id and not str(section_id).isdigit():
+            cursor.close()
+            connection.close()
+            return jsonify({'error': 'Invalid section ID'}), 400
+        
+        # Check if subnet already exists in the same section
+        if section_id:
+            cursor.execute(
+                "SELECT id FROM subnets WHERE subnet = %s AND section_id = %s", 
+                (data['subnet'], section_id)
+            )
+        else:
+            cursor.execute(
+                "SELECT id FROM subnets WHERE subnet = %s AND section_id IS NULL", 
+                (data['subnet'],)
+            )
+            
+        if cursor.fetchone():
+            cursor.close()
+            connection.close()
+            return jsonify({'error': 'Subnet already exists in this section'}), 409
+        
+        # Insert new subnet
+        insert_query = """
+            INSERT INTO subnets 
+            (subnet, description, section_id, vlan, vrf, device, customer, location)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        values = (
+            data['subnet'],
+            data.get('description', ''),
+            section_id,
+            data.get('vlan', ''),
+            data.get('vrf', ''),
+            data.get('device', ''),
+            data.get('customer', ''),
+            data.get('location', '')
+        )
+        
+        cursor.execute(insert_query, values)
+        connection.commit()
+        
+        new_id = cursor.lastrowid
+        cursor.close()
+        connection.close()
+        
+        return jsonify({'success': True, 'id': new_id, 'message': 'Subnet added successfully'})
+        
+    except Error as e:
+        print(f"❌ Error adding subnet: {e}")
         return jsonify({'error': str(e)}), 500
 
 # ================== ADVANCED SUBNET ANALYSIS API ==================
@@ -1544,72 +1859,6 @@ def api_get_subnets():
         
     except Error as e:
         print(f"❌ Error getting subnets: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/subnets', methods=['POST'])
-def api_add_subnet():
-    """Add a new subnet"""
-    try:
-        data = request.get_json()
-        
-        # Validate required fields
-        if not data.get('subnet'):
-            return jsonify({'error': 'Subnet is required'}), 400
-            
-        # Validate subnet format
-        try:
-            ipaddress.IPv4Network(data['subnet'], strict=False)
-        except:
-            return jsonify({'error': 'Invalid subnet format'}), 400
-        
-        connection = get_db_connection()
-        if not connection:
-            return jsonify({'error': 'Database connection failed'}), 500
-            
-        cursor = connection.cursor()
-        
-        # Check if subnet already exists
-        cursor.execute("SELECT id FROM subnets WHERE subnet = %s", (data['subnet'],))
-        if cursor.fetchone():
-            return jsonify({'error': 'Subnet already exists'}), 400
-        
-        # Insert new subnet
-        cursor.execute("""
-            INSERT INTO subnets (
-                subnet, description, section, vlan, device, nameservers,
-                master_subnet, vrf, customer, location, mark_as_pool,
-                mark_as_full, threshold_percentage, check_hosts_status,
-                discover_new_hosts, resolve_dns_names, show_as_name, irr
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            data['subnet'],
-            data.get('description', ''),
-            data.get('section', ''),
-            data.get('vlan', ''),
-            data.get('device', ''),
-            data.get('nameservers', ''),
-            data.get('master_subnet', ''),
-            data.get('vrf', ''),
-            data.get('customer', ''),
-            data.get('location', ''),
-            data.get('mark_as_pool', False),
-            data.get('mark_as_full', False),
-            data.get('threshold_percentage', 80),
-            data.get('check_hosts_status', False),
-            data.get('discover_new_hosts', False),
-            data.get('resolve_dns_names', False),
-            data.get('show_as_name', False),
-            data.get('irr', '')
-        ))
-        
-        connection.commit()
-        cursor.close()
-        connection.close()
-        
-        return jsonify({'message': 'Subnet added successfully'}), 201
-        
-    except Error as e:
-        print(f"❌ Error adding subnet: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/subnets/<int:subnet_id>', methods=['PUT'])
