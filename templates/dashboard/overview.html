@@ -1,0 +1,310 @@
+{% extends "shared/base_layout.html" %}
+
+{% block title %}Dashboard Overview{% endblock %}
+{% block page_title %}Dashboard Overview{% endblock %}
+{% block page_subtitle %}Real-time network statistics and monitoring{% endblock %}
+
+{% block header_actions %}
+<button onclick="loadPageData()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+    <i class="fas fa-sync mr-2"></i>Refresh
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <div class="bg-white rounded-lg shadow p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-green-100 text-green-600">
+                <i class="fas fa-check-circle text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <h3 class="text-sm font-medium text-gray-500">Available IPs</h3>
+                <p class="text-2xl font-bold text-gray-900" id="available-ips">-</p>
+                <p class="text-sm text-green-600" id="available-percentage">-</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-red-100 text-red-600">
+                <i class="fas fa-desktop text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <h3 class="text-sm font-medium text-gray-500">Used IPs</h3>
+                <p class="text-2xl font-bold text-gray-900" id="used-ips">-</p>
+                <p class="text-sm text-red-600" id="used-percentage">-</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-yellow-100 text-yellow-600">
+                <i class="fas fa-bookmark text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <h3 class="text-sm font-medium text-gray-500">Reserved IPs</h3>
+                <p class="text-2xl font-bold text-gray-900" id="reserved-ips">-</p>
+                <p class="text-sm text-yellow-600" id="reserved-percentage">-</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-lg shadow p-6 card-hover">
+        <div class="flex items-center">
+            <div class="p-3 rounded-full bg-purple-100 text-purple-600">
+                <i class="fas fa-sitemap text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <h3 class="text-sm font-medium text-gray-500">Total Subnets</h3>
+                <p class="text-2xl font-bold text-gray-900" id="total-subnets">-</p>
+                <p class="text-sm text-purple-600">Networks managed</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Content Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- IP Utilization Chart -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-900">IP Utilization</h3>
+                <button onclick="refreshUtilization()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-sync"></i>
+                </button>
+            </div>
+        </div>
+        <div class="p-6">
+            <div class="space-y-4">
+                <div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Available</span>
+                        <span class="font-medium" id="util-available-percent">-</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
+                        <div id="util-available-bar" class="bg-green-500 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Used</span>
+                        <span class="font-medium" id="util-used-percent">-</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
+                        <div id="util-used-bar" class="bg-red-500 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-600">Reserved</span>
+                        <span class="font-medium" id="util-reserved-percent">-</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2 mt-1">
+                        <div id="util-reserved-bar" class="bg-yellow-500 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Domains -->
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-900">Service Domains</h3>
+                <a href="/vrf-monitoring" class="text-blue-600 hover:text-blue-800 text-sm font-medium">View All →</a>
+            </div>
+        </div>
+        <div class="p-6">
+            <div id="vrfDistribution" class="space-y-3">
+                <div class="text-center py-8">
+                    <i class="fas fa-spinner loading-spinner text-2xl text-purple-600"></i>
+                    <p class="mt-2 text-gray-600">Loading VRF data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="mt-6">
+    <div class="bg-white rounded-lg shadow">
+        <div class="p-6 border-b border-gray-200">
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-semibold text-gray-900">Recent Activity</h3>
+                <a href="/ip-management" class="text-blue-600 hover:text-blue-800 text-sm font-medium">View All →</a>
+            </div>
+        </div>
+        <div class="p-6">
+            <div id="recentActivity" class="space-y-3">
+                <div class="text-center py-8">
+                    <i class="fas fa-spinner loading-spinner text-2xl text-blue-600"></i>
+                    <p class="mt-2 text-gray-600">Loading recent activity...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Load dashboard data on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        loadPageData();
+    });
+
+    // Main data loading function
+    async function loadPageData() {
+        await Promise.all([
+            loadDashboardStats(),
+            loadVRFDistribution(),
+            loadRecentActivity()
+        ]);
+    }
+
+    async function loadDashboardStats() {
+        try {
+            const response = await fetch('/api/dashboard-stats');
+            const data = await response.json();
+            
+            if (data.error) {
+                throw new Error(data.error);
+            }
+            
+            // Update statistics cards
+            document.getElementById('available-ips').textContent = formatNumber(data.available_ips || 0);
+            document.getElementById('used-ips').textContent = formatNumber(data.used_ips || 0);
+            document.getElementById('reserved-ips').textContent = formatNumber(data.reserved_ips || 0);
+            document.getElementById('total-subnets').textContent = formatNumber(data.total_subnets || 0);
+            
+            // Calculate percentages
+            const totalIPs = (data.available_ips || 0) + (data.used_ips || 0) + (data.reserved_ips || 0);
+            if (totalIPs > 0) {
+                const availablePercent = Math.round((data.available_ips / totalIPs) * 100);
+                const usedPercent = Math.round((data.used_ips / totalIPs) * 100);
+                const reservedPercent = Math.round((data.reserved_ips / totalIPs) * 100);
+                
+                document.getElementById('available-percentage').textContent = `${availablePercent}% of total`;
+                document.getElementById('used-percentage').textContent = `${usedPercent}% of total`;
+                document.getElementById('reserved-percentage').textContent = `${reservedPercent}% of total`;
+                
+                // Update utilization bars
+                document.getElementById('util-available-percent').textContent = `${availablePercent}%`;
+                document.getElementById('util-used-percent').textContent = `${usedPercent}%`;
+                document.getElementById('util-reserved-percent').textContent = `${reservedPercent}%`;
+                
+                document.getElementById('util-available-bar').style.width = `${availablePercent}%`;
+                document.getElementById('util-used-bar').style.width = `${usedPercent}%`;
+                document.getElementById('util-reserved-bar').style.width = `${reservedPercent}%`;
+            }
+            
+        } catch (error) {
+            console.error('Error loading dashboard stats:', error);
+            showToast('Failed to load dashboard data', 'error');
+        }
+    }
+
+    async function loadVRFDistribution() {
+        try {
+            const response = await fetch('/api/vrf-monitoring');
+            const data = await response.json();
+            
+            const container = document.getElementById('vrfDistribution');
+            
+            if (data.vrf_data && data.vrf_data.length > 0) {
+                const topVRFs = data.vrf_data.slice(0, 5); // Top 5 VRFs
+                
+                container.innerHTML = topVRFs.map(vrf => `
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                         onclick="window.location.href='/vrf-monitoring'">
+                        <div class="flex items-center">
+                            <div class="w-3 h-3 rounded-full mr-3 bg-purple-500"></div>
+                            <div>
+                                <div class="font-medium text-gray-800">${vrf.vrf_name}</div>
+                                <div class="text-sm text-gray-500">${formatNumber(vrf.total_ips)} IPs total</div>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-semibold text-gray-800">${vrf.utilization_percentage}%</div>
+                            <div class="text-xs text-gray-500">utilization</div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-network-wired text-4xl mb-3"></i>
+                        <p>No VRF data available</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error loading VRF distribution:', error);
+            document.getElementById('vrfDistribution').innerHTML = `
+                <div class="text-center py-8 text-red-500">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-3"></i>
+                    <p>Failed to load VRF data</p>
+                </div>
+            `;
+        }
+    }
+
+    async function loadRecentActivity() {
+        try {
+            const response = await fetch('/api/ip-data?limit=10');
+            const data = await response.json();
+            
+            const container = document.getElementById('recentActivity');
+            
+            if (data.data && data.data.length > 0) {
+                // Sort by updated_at to get recent activity
+                const recentItems = data.data
+                    .filter(item => item.updated_at)
+                    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+                    .slice(0, 5);
+                
+                container.innerHTML = recentItems.map(item => {
+                    const statusColor = getStatusColor(item.status);
+                    
+                    return `
+                        <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                             onclick="window.location.href='/ip-management'">
+                            <div class="w-2 h-2 rounded-full ${statusColor.includes('red') ? 'bg-red-500' : statusColor.includes('green') ? 'bg-green-500' : 'bg-yellow-500'}"></div>
+                            <div class="flex-1">
+                                <div class="font-medium text-gray-800">${item.ip_address}</div>
+                                <div class="text-sm text-gray-500">${item.hostname || 'No hostname'} • ${item.status}</div>
+                            </div>
+                            <div class="text-xs text-gray-400">${formatDate(item.updated_at)}</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                container.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-clock text-4xl mb-3"></i>
+                        <p>No recent activity</p>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            console.error('Error loading recent activity:', error);
+            document.getElementById('recentActivity').innerHTML = `
+                <div class="text-center py-8 text-red-500">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-3"></i>
+                    <p>Failed to load recent activity</p>
+                </div>
+            `;
+        }
+    }
+
+    function refreshUtilization() {
+        loadDashboardStats();
+        showToast('Utilization data refreshed', 'success');
+    }
+</script>
+{% endblock %}

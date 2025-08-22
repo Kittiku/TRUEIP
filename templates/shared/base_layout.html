@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}IPAM System{% endblock %} - IP Address Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .loading-spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .sidebar { width: 280px; }
+        {% block extra_styles %}{% endblock %}
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen flex">
+    <!-- Sidebar -->
+    <div class="sidebar gradient-bg text-white shadow-lg">
+        <div class="p-6">
+            <div class="flex items-center mb-8">
+                <i class="fas fa-network-wired text-2xl mr-3"></i>
+                <div>
+                    <h1 class="text-xl font-bold">IPAM System</h1>
+                    <p class="text-sm opacity-80">IP Address Management</p>
+                </div>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="text-sm font-semibold text-white mb-4 opacity-80">MAIN MENU</h3>
+                <nav class="space-y-2">
+                    <a href="/" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'index' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-home w-5"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="/ip-management" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'ip_management_clean' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-list w-5"></i>
+                        <span>IP Management</span>
+                    </a>
+                    <a href="/subnet-manager" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'subnet_manager' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-sitemap w-5"></i>
+                        <span>Subnet Management</span>
+                    </a>
+                    <a href="/vrf-monitoring" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'vrf_monitoring' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-chart-line w-5"></i>
+                        <span>VRF Monitoring</span>
+                    </a>
+                    <a href="/network-sections" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'network_sections' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-folder w-5"></i>
+                        <span>Network Sections</span>
+                        <span class="ml-auto bg-green-500 text-white text-xs px-2 py-1 rounded">NEW</span>
+                    </a>
+                </nav>
+            </div>
+            
+            <div class="mb-6">
+                <h3 class="text-sm font-semibold text-white mb-4 opacity-80">ADVANCED TOOLS</h3>
+                <nav class="space-y-2">
+                    <a href="/ip-auto-allocation" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'ip_auto_allocation' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-magic w-5"></i>
+                        <span>IP Auto Allocation</span>
+                        <span class="ml-auto bg-green-500 text-white text-xs px-2 py-1 rounded">NEW</span>
+                    </a>
+                    <a href="/csv-import" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200 {% if request.endpoint == 'csv_import' %}bg-white/20 text-white{% endif %}">
+                        <i class="fas fa-upload w-5"></i>
+                        <span>CSV Import</span>
+                        <span class="ml-auto bg-green-500 text-white text-xs px-2 py-1 rounded">NEW</span>
+                    </a>
+                </nav>
+            </div>
+            
+            <div>
+                <h3 class="text-sm font-semibold text-white mb-4 opacity-80">QUICK ACTIONS</h3>
+                <div class="space-y-2">
+                    <button onclick="refreshData()" class="w-full flex items-center space-x-3 p-3 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all duration-200">
+                        <i class="fas fa-sync w-5"></i>
+                        <span>Refresh Data</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 overflow-hidden">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-gray-200">
+            <div class="px-6 py-4">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-900">{% block page_title %}IPAM Dashboard{% endblock %}</h1>
+                        <p class="text-gray-600 text-sm">{% block page_subtitle %}Manage your IP address infrastructure{% endblock %}</p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        {% block header_actions %}
+                        <button onclick="refreshData()" class="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-sync mr-2"></i>Refresh
+                        </button>
+                        {% endblock %}
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content -->
+        <div class="{% block content_class %}p-6 h-full overflow-y-auto{% endblock %}">
+            {% block content %}
+            <div class="text-center py-20">
+                <i class="fas fa-network-wired text-6xl text-gray-300 mb-4"></i>
+                <h2 class="text-2xl font-bold text-gray-700 mb-2">IPAM System</h2>
+                <p class="text-gray-500">Select a function from the sidebar to get started</p>
+            </div>
+            {% endblock %}
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50"></div>
+
+    <!-- Common Modals -->
+    {% block modals %}{% endblock %}
+
+    <!-- Base JavaScript -->
+    <script>
+        // Common utility functions
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-red-500' : type === 'success' ? 'bg-green-500' : 'bg-blue-500';
+            
+            toast.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg mb-3 transform transition-all duration-300`;
+            toast.textContent = message;
+            
+            const container = document.getElementById('toast-container');
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.transform = 'translateX(100%)';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function refreshData() {
+            if (typeof loadPageData === 'function') {
+                loadPageData();
+                showToast('Data refreshed', 'success');
+            } else {
+                location.reload();
+            }
+        }
+
+        // Utility functions for API calls
+        function getStatusColor(status) {
+            switch(status?.toLowerCase()) {
+                case 'used': return 'bg-red-100 text-red-800';
+                case 'available': return 'bg-green-100 text-green-800';
+                case 'reserved': return 'bg-yellow-100 text-yellow-800';
+                default: return 'bg-gray-100 text-gray-800';
+            }
+        }
+
+        function formatDate(dateString) {
+            if (!dateString) return '-';
+            return new Date(dateString).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat().format(num);
+        }
+    </script>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IPAM - Advanced IP Management System</title>
+    <title>IPAM - Complete IP Management System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -16,38 +16,23 @@
         .status-available { color: #10b981; background-color: #f0fdf4; }
         .status-reserved { color: #f59e0b; background-color: #fffbeb; }
         
-        /* Enhanced Sidebar Styles with Auto-Hide */
+        /* Streamlined Sidebar Styles */
         .sidebar { 
-            width: 320px; 
+            width: 300px; 
             min-height: 100vh; 
             position: fixed; 
             left: 0; 
             top: 0; 
             overflow-y: auto;
-            display: flex;
-            flex-direction: column;
             z-index: 40;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transition: all 0.3s ease;
         }
         
-        /* Auto-hide state */
-        .sidebar.auto-hide {
-            transform: translateX(-260px); /* Show only 60px */
-        }
-        
-        .sidebar.auto-hide:hover,
-        .sidebar.auto-hide.show {
-            transform: translateX(0);
-            box-shadow: 4px 0 20px rgba(0,0,0,0.15);
-        }
-        
-        /* Main content adjustments for auto-hide */
         .main-content { 
-            margin-left: 320px; 
+            margin-left: 300px; 
             flex: 1; 
             min-height: 100vh;
             position: relative;
-            overflow-x: hidden;
             width: calc(100% - 320px);
             transition: margin-left 0.3s ease, width 0.3s ease;
         }
@@ -356,9 +341,34 @@
 
     <!-- Main Content -->
     <div class="main-content flex-1 overflow-hidden">
-        <!-- Header -->
+        <!-- Header with Breadcrumb -->
         <header class="bg-white shadow-sm border-b border-gray-200">
             <div class="px-6 py-4">
+                <!-- Breadcrumb Navigation -->
+                <nav class="flex mb-4" aria-label="Breadcrumb">
+                    <ol class="inline-flex items-center space-x-1 md:space-x-3">
+                        <li class="inline-flex items-center">
+                            <a href="/" class="inline-flex items-center text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors">
+                                <i class="fas fa-home mr-2"></i>
+                                Home
+                            </a>
+                        </li>
+                        <li>
+                            <div class="flex items-center">
+                                <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
+                                <span class="text-sm font-medium text-blue-600" id="breadcrumb-section">Dashboard</span>
+                            </div>
+                        </li>
+                        <li id="breadcrumb-subsection" class="hidden">
+                            <div class="flex items-center">
+                                <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
+                                <span class="text-sm text-gray-500" id="breadcrumb-subsection-text"></span>
+                            </div>
+                        </li>
+                    </ol>
+                </nav>
+                
+                <!-- Page Title and Actions -->
                 <div class="flex justify-between items-center">
                     <div>
                         <h1 class="text-2xl font-bold text-gray-900" id="page-title">Dashboard Overview</h1>
@@ -375,6 +385,18 @@
 
         <!-- Dashboard Section -->
         <div id="dashboard-section" class="section active p-6">
+            <!-- Loading Indicator -->
+            <div id="dashboard-loading" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                    <div class="bg-gray-200 animate-pulse rounded-xl shadow-lg p-6 h-32"></div>
+                    <div class="bg-gray-200 animate-pulse rounded-xl shadow-lg p-6 h-32"></div>
+                    <div class="bg-gray-200 animate-pulse rounded-xl shadow-lg p-6 h-32"></div>
+                    <div class="bg-gray-200 animate-pulse rounded-xl shadow-lg p-6 h-32"></div>
+                </div>
+            </div>
+
+            <!-- Dashboard Content -->
+            <div id="dashboard-content">
             <!-- Top Statistics Cards -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <!-- Available IPs Card -->
@@ -1091,12 +1113,54 @@
         let ipData = [];
         let currentSubnetData = null;
 
+        // Toast Notification System
+        function showToast(message, type = 'success', duration = 3000) {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const bgColor = type === 'success' ? 'bg-green-500' : 
+                           type === 'error' ? 'bg-red-500' : 
+                           type === 'warning' ? 'bg-yellow-500' : 'bg-blue-500';
+            
+            toast.className = `${bgColor} text-white px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 ease-in-out opacity-0 translate-x-full`;
+            toast.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <span>${message}</span>
+                    <button onclick="removeToast(this)" class="ml-4 text-white hover:text-gray-200">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // Animate in
+            setTimeout(() => {
+                toast.classList.remove('opacity-0', 'translate-x-full');
+            }, 100);
+            
+            // Auto remove
+            setTimeout(() => {
+                removeToast(toast);
+            }, duration);
+        }
+
+        function removeToast(element) {
+            const toast = element.parentElement ? element.parentElement.parentElement : element;
+            toast.classList.add('opacity-0', 'translate-x-full');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             showSection('dashboard');
         });
 
-        // Navigation functions
+        // Navigation functions with breadcrumb support
         function showSection(sectionName, triggerElement) {
             // Hide all sections
             document.querySelectorAll('.section').forEach(section => {
@@ -1129,7 +1193,7 @@
             
             currentSection = sectionName;
             
-            // Update page title
+            // Update page title and breadcrumb
             const titles = {
                 'dashboard': 'Dashboard Overview',
                 'ip-management': 'IP Address Management', 
@@ -1146,8 +1210,26 @@
                 'auto-allocation': 'Intelligent IP address allocation and reservation'
             };
             
+            const breadcrumbNames = {
+                'dashboard': 'Dashboard',
+                'ip-management': 'IP Management', 
+                'subnet-management': 'Subnet Management',
+                'vrf-monitoring': 'VRF Monitoring',
+                'auto-allocation': 'IP Auto Allocation'
+            };
+            
+            // Update page title and subtitle
             document.getElementById('page-title').textContent = titles[sectionName] || 'IPAM System';
             document.getElementById('page-subtitle').textContent = subtitles[sectionName] || 'IP Address Management System';
+            
+            // Update breadcrumb
+            document.getElementById('breadcrumb-section').textContent = breadcrumbNames[sectionName] || 'Unknown';
+            
+            // Hide subsection breadcrumb initially
+            document.getElementById('breadcrumb-subsection').classList.add('hidden');
+            
+            // Show notification for section change
+            showToast(`Switched to ${breadcrumbNames[sectionName]}`, 'info');
             
             // Load section-specific data
             if (sectionName === 'dashboard') {
@@ -1166,6 +1248,15 @@
 
         // Load dashboard data
         async function loadDashboardData() {
+            // Show loading indicator
+            const loadingEl = document.getElementById('dashboard-loading');
+            const contentEl = document.getElementById('dashboard-content');
+            
+            if (loadingEl && contentEl) {
+                loadingEl.classList.remove('hidden');
+                contentEl.classList.add('hidden');
+            }
+            
             try {
                 const response = await fetch('/api/statistics');
                 const data = await response.json();
@@ -1215,9 +1306,23 @@
                 ]);
                 
                 loadSubnetOverview();
+                
+                // Hide loading, show content
+                if (loadingEl && contentEl) {
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+                }
             } catch (error) {
                 console.error('Error loading dashboard data:', error);
                 showToast('Failed to load dashboard data', 'error');
+                
+                // Hide loading even on error
+                const loadingEl = document.getElementById('dashboard-loading');
+                const contentEl = document.getElementById('dashboard-content');
+                if (loadingEl && contentEl) {
+                    loadingEl.classList.add('hidden');
+                    contentEl.classList.remove('hidden');
+                }
             }
         }
 
@@ -1693,7 +1798,7 @@
             const description = document.getElementById('newDescription').value;
             
             if (!ipAddress || !subnet || !status) {
-                showNotification('Please fill in all required fields', 'error');
+                showToast('Please fill in all required fields', 'error');
                 return;
             }
             
@@ -1718,13 +1823,13 @@
                 
                 if (result.success) {
                     closeAddIPModal();
-                    showNotification('IP added successfully!', 'success');
+                    showToast('IP added successfully!', 'success');
                     refreshAllData();
                 } else {
-                    showNotification('Error: ' + result.error, 'error');
+                    showToast('Error: ' + result.error, 'error');
                 }
             } catch (error) {
-                showNotification('Error adding IP: ' + error.message, 'error');
+                showToast('Error adding IP: ' + error.message, 'error');
             }
         }
 
@@ -1827,10 +1932,10 @@
                         loadDashboardData();
                         break;
                     case 'ip-management':
-                        loadIPData();
+                        loadIPManagement(); // Use the proper function
                         break;
                     case 'subnet-management':
-                        loadSubnetData();
+                        loadSubnetManagement();
                         break;
                     case 'vrf-monitoring':
                         loadVRFData();
@@ -1953,6 +2058,7 @@
 
         // Load IP management section
         async function loadIPManagement() {
+            console.log('🚀 Loading IP Management...');
             try {
                 loadIPList(1); // Load first page
             } catch (error) {
@@ -1963,6 +2069,7 @@
 
         // Load IP list with pagination and filters
         async function loadIPList(page = 1) {
+            console.log('📋 Loading IP list, page:', page);
             try {
                 const subnetFilter = document.getElementById('ip-subnet-filter')?.value || '';
                 const statusFilter = document.getElementById('ip-status-filter')?.value || '';
@@ -1976,17 +2083,44 @@
                     vrf: vrfFilter
                 });
                 
-                const response = await fetch(`/api/ip-list?${params}`);
-                const data = await response.json();
+                const apiUrl = `/api/ip-list?${params}`;
+                console.log('🌐 API URL:', apiUrl);
                 
-                // Update total count
-                document.getElementById('total-ips-display').textContent = `${data.pagination.total.toLocaleString()} Total IPs`;
+                const response = await fetch(apiUrl);
+                console.log('📡 Response status:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                console.log('📊 IP List data:', data);
+                
+                // Update total count (with fallback)
+                const totalElement = document.getElementById('total-ips-display');
+                if (totalElement && data.pagination) {
+                    totalElement.textContent = `${data.pagination.total.toLocaleString()} Total IPs`;
+                } else {
+                    console.warn('⚠️ Missing total-ips-display element or pagination data');
+                }
                 
                 // Render IP table
-                renderIPTable(data.ips);
+                if (data.ips) {
+                    renderIPTable(data.ips);
+                } else {
+                    console.warn('⚠️ No IP data received');
+                    const container = document.getElementById('ip-table-container');
+                    if (container) {
+                        container.innerHTML = '<div class="text-center py-8 text-gray-500">No IP data available</div>';
+                    }
+                }
                 
                 // Render pagination
-                renderIPPagination(data.pagination, page);
+                if (data.pagination) {
+                    renderIPPagination(data.pagination, page);
+                } else {
+                    console.warn('⚠️ No pagination data received');
+                }
                 
             } catch (error) {
                 console.error('Error loading IP list:', error);
@@ -1996,7 +2130,13 @@
 
         // Render IP table
         function renderIPTable(ips) {
+            console.log('🔄 Rendering IP table with', ips ? ips.length : 0, 'items');
             const container = document.getElementById('ip-table-container');
+            
+            if (!container) {
+                console.error('❌ ip-table-container element not found');
+                return;
+            }
             
             if (!ips || ips.length === 0) {
                 container.innerHTML = '<div class="text-center py-8 text-gray-500">No IP addresses found</div>';
@@ -2247,10 +2387,23 @@
                 console.log('📡 Response ok:', response.ok);
                 
                 if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ HTTP Error Response:', errorText);
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
-                const data = await response.json();
+                const responseText = await response.text();
+                console.log('📡 Raw response:', responseText.substring(0, 200) + '...');
+                
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('❌ JSON Parse Error:', parseError);
+                    console.error('❌ Response was:', responseText);
+                    throw new Error('Invalid JSON response from server');
+                }
+                
                 console.log('📊 API Response data:', data);
                 
                 if (data.error) {
@@ -2279,6 +2432,20 @@
                 }
                 
                 showToast(errorMsg, 'error');
+                
+                // Show error in modal if it's open
+                const errorModalIpList = document.getElementById('modal-ip-list');
+                if (errorModalIpList) {
+                    errorModalIpList.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center py-8 text-red-500">
+                                <i class="fas fa-exclamation-triangle text-2xl"></i>
+                                <p class="mt-2">${errorMsg}</p>
+                                <p class="text-sm text-gray-500 mt-1">Check browser console for details</p>
+                            </td>
+                        </tr>
+                    `;
+                }
                 
                 // Show error in modal if it's open
                 const modalIpList = document.getElementById('modal-ip-list');
@@ -2728,6 +2895,8 @@
                 loadSubnetManagement();
             }
             
+            showToast('Filters cleared', 'info');
+            
             showToast('All filters cleared', 'success');
         }
 
@@ -3044,9 +3213,9 @@
             .then(response => response.json())
             .then(data => {
                 if (data.error) {
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error, 'error');
                 } else {
-                    alert('Subnet added successfully!');
+                    showToast('Subnet added successfully!', 'success');
                     closeAddSubnetModal();
                     // Refresh the subnet data
                     if (currentSection === 'subnet-management') {
@@ -3056,7 +3225,7 @@
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error adding subnet');
+                showToast('Error adding subnet', 'error');
             });
         }
 
@@ -3949,6 +4118,9 @@
         });
     </script>
     </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
     <!-- IP Details Modal -->
     <div id="ipDetailsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">

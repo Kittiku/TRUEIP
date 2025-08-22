@@ -382,19 +382,9 @@ def index():
     """Network Sections Dashboard - Main Homepage"""
     return render_template('network_dashboard.html')
 
-@app.route('/ip-management-classic')
-def ip_management_classic():
-    """Classic IP Management Interface"""
-    return render_template('ip_management_clean.html')
-
 @app.route('/network-sections')
 def network_sections():
-    """Network Sections Management page (Legacy)"""
-    return render_template('network_sections.html')
-
-@app.route('/network-sections-legacy')
-def network_sections_legacy():
-    """Legacy Network Sections page"""
+    """Network Sections Management page"""
     return render_template('network_sections.html')
 
 @app.route('/section-management')
@@ -409,7 +399,7 @@ def csv_import_page():
 
 @app.route('/ip-management')
 def ip_management():
-    """Advanced IP Management page"""
+    """Main IP Management page - Primary Interface"""
     return render_template('ip_management_clean.html')
 
 @app.route('/subnet-manager')
@@ -427,25 +417,27 @@ def ip_auto_allocation():
     """IP Auto Allocation page"""
     return render_template('ip_auto_allocation.html')
 
-@app.route('/ip-management-clean')
-def ip_management_clean():
-    """Clean IP Management page"""
-    return render_template('ip_management_clean.html')
+# Modern modular template routes
+@app.route('/dashboard-modern')
+def dashboard_modern():
+    """Modern Dashboard with modular design"""
+    return render_template('dashboard/overview.html')
 
-@app.route('/ip-management-advanced')
-def ip_management_advanced():
-    """Advanced IP Management page with full features"""
+@app.route('/ip-management-modern')
+def ip_management_modern():
+    """Modern IP Management with modular design"""
+    return render_template('ip_management/ip_list.html')
+
+# Legacy/Alternative interfaces (for backward compatibility)
+@app.route('/ip-management-legacy')
+def ip_management_legacy():
+    """Legacy IP Management Interface"""
     return render_template('ip_management_clean.html')
 
 @app.route('/advanced-dashboard')
 def advanced_dashboard():
     """Advanced Dashboard with charts and analytics"""
     return render_template('advanced_dashboard.html')
-
-@app.route('/test-dashboard')  
-def test_dashboard():
-    """Test Dashboard for debugging"""
-    return render_template('test_dashboard.html')
 
 @app.route('/api/ip-data')
 def api_ip_data():

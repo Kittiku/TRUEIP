@@ -498,7 +498,7 @@
                 }
 
                 currentSubnets = data.subnets;
-                updateStats(data.stats);
+                updateStats(data);
                 renderSubnets();
                 hideLoading();
 
@@ -509,11 +509,17 @@
             }
         }
 
-        function updateStats(stats) {
-            document.getElementById('totalSubnets').textContent = stats.total_subnets.toLocaleString();
-            document.getElementById('totalIPs').textContent = stats.total_ips.toLocaleString();
-            document.getElementById('usedIPs').textContent = stats.used_ips.toLocaleString();
-            document.getElementById('availableIPs').textContent = stats.available_ips.toLocaleString();
+        function updateStats(data) {
+            // Handle the different field names from API response
+            const totalSubnets = data.total_subnets || 0;
+            const totalUsed = data.total_used || 0;
+            const totalFree = data.total_free || 0;
+            const totalIPs = totalUsed + totalFree;
+            
+            document.getElementById('totalSubnets').textContent = totalSubnets.toLocaleString();
+            document.getElementById('totalIPs').textContent = totalIPs.toLocaleString();
+            document.getElementById('usedIPs').textContent = totalUsed.toLocaleString();
+            document.getElementById('availableIPs').textContent = totalFree.toLocaleString();
         }
 
         function renderSubnets() {
