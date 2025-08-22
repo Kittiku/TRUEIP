@@ -376,23 +376,11 @@
     </div>
 
     <script>
-        // Sample network sections data
-        const networkSections = [
-            { id: 1, name: "CORE-NETWORK", description: "Core Network Infrastructure", color: "#17a2b8", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
-            { id: 2, name: "Default", description: "Default network section", color: "#007bff", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
-            { id: 3, name: "Delete_True", description: "Archived True networks", color: "#6c757d", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
-            { id: 4, name: "Dtac", description: "DTAC Network Infrastructure", color: "#fd7e14", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
-            { id: 5, name: "Gi", description: "All Gi Path Network", color: "#28a745", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
-            { id: 6, name: "Public IP", description: "Public IP Address Pool", color: "#6f42c1", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
-            { id: 7, name: "Production", description: "Production Environment", color: "#dc3545", subnets: 15, ips: 450, utilization: 75, created: "2025-08-22" },
-            { id: 8, name: "Development", description: "Development Environment", color: "#20c997", subnets: 8, ips: 200, utilization: 45, created: "2025-08-22" },
-            { id: 9, name: "Testing", description: "Testing Environment", color: "#ffc107", subnets: 5, ips: 100, utilization: 30, created: "2025-08-22" },
-            { id: 10, name: "DMZ", description: "Demilitarized Zone", color: "#e83e8c", subnets: 3, ips: 75, utilization: 60, created: "2025-08-22" }
-        ];
-
-        // Sidebar functionality
+        // Global variables
+        let networkSections = [];
         let sidebarHidden = true;
 
+        // Sidebar functionality
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const mainContent = document.getElementById('mainContent');
@@ -411,8 +399,47 @@
             }
         }
 
-        // Load sections
-        function loadSections() {
+        // Load sections from API
+        async function loadSections() {
+            try {
+                const response = await fetch('/api/sections');
+                const data = await response.json();
+                
+                if (data.sections) {
+                    networkSections = data.sections;
+                    renderSections();
+                    updateStatistics();
+                } else {
+                    console.error('Failed to load sections:', data.error);
+                    // Fallback to sample data if API fails
+                    loadSampleData();
+                }
+            } catch (error) {
+                console.error('Error loading sections:', error);
+                // Fallback to sample data if API fails
+                loadSampleData();
+            }
+        }
+
+        function loadSampleData() {
+            // Fallback sample data
+            networkSections = [
+                { id: 1, name: "CORE-NETWORK", description: "Core Network Infrastructure", color: "#17a2b8", subnet_count: 0, ip_count: 0, utilization: 0, created: "2025-08-22" },
+                { id: 2, name: "Default", description: "Default network section", color: "#007bff", subnet_count: 0, ip_count: 0, utilization: 0, created: "2025-08-22" },
+                { id: 3, name: "Delete_True", description: "Archived True networks", color: "#6c757d", subnet_count: 0, ip_count: 0, utilization: 0, created: "2025-08-22" },
+                { id: 4, name: "Dtac", description: "DTAC Network Infrastructure", color: "#fd7e14", subnet_count: 0, ip_count: 0, utilization: 0, created: "2025-08-22" },
+                { id: 5, name: "Gi", description: "All Gi Path Network", color: "#28a745", subnet_count: 0, ip_count: 0, utilization: 0, created: "2025-08-22" },
+                { id: 6, name: "Public IP", description: "Public IP Address Pool", color: "#6f42c1", subnet_count: 0, ip_count: 0, utilization: 0, created: "2025-08-22" },
+                { id: 7, name: "Production", description: "Production Environment", color: "#dc3545", subnet_count: 15, ip_count: 450, utilization: 75, created: "2025-08-22" },
+                { id: 8, name: "Development", description: "Development Environment", color: "#20c997", subnet_count: 8, ip_count: 200, utilization: 45, created: "2025-08-22" },
+                { id: 9, name: "Testing", description: "Testing Environment", color: "#ffc107", subnet_count: 5, ip_count: 100, utilization: 30, created: "2025-08-22" },
+                { id: 10, name: "DMZ", description: "Demilitarized Zone", color: "#e83e8c", subnet_count: 3, ip_count: 75, utilization: 60, created: "2025-08-22" }
+            ];
+            renderSections();
+            updateStatistics();
+        }
+
+        function renderSections() {
             const grid = document.getElementById('sectionsGrid');
             grid.innerHTML = '';
             
@@ -420,8 +447,6 @@
                 const sectionCard = createSectionCard(section);
                 grid.appendChild(sectionCard);
             });
-            
-            updateStatistics();
         }
 
         function createSectionCard(section) {
@@ -429,6 +454,11 @@
             card.className = 'section-card card-hover';
             card.style.borderLeftColor = section.color;
             card.onclick = () => openSection(section.id);
+            
+            const subnets = section.subnet_count || 0;
+            const ips = section.ip_count || 0;
+            const utilization = section.utilization || 0;
+            const created = section.created || '2025-08-22';
             
             card.innerHTML = `
                 <div class="flex items-start justify-between mb-4">
@@ -451,25 +481,25 @@
                 
                 <div class="grid grid-cols-3 gap-4 mb-4">
                     <div class="text-center">
-                        <div class="text-xl font-bold text-blue-600">${section.subnets}</div>
+                        <div class="text-xl font-bold text-blue-600">${subnets}</div>
                         <div class="text-xs text-gray-500">Subnets</div>
                     </div>
                     <div class="text-center">
-                        <div class="text-xl font-bold text-green-600">${section.ips}</div>
+                        <div class="text-xl font-bold text-green-600">${ips}</div>
                         <div class="text-xs text-gray-500">IPs</div>
                     </div>
                     <div class="text-center">
-                        <div class="text-xl font-bold text-purple-600">${section.utilization}%</div>
+                        <div class="text-xl font-bold text-purple-600">${utilization}%</div>
                         <div class="text-xs text-gray-500">Used</div>
                     </div>
                 </div>
                 
                 <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
-                    <div class="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-500" style="width: ${section.utilization}%"></div>
+                    <div class="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-500" style="width: ${utilization}%"></div>
                 </div>
                 
                 <div class="flex items-center justify-between text-xs text-gray-500">
-                    <span>Created: ${section.created}</span>
+                    <span>Created: ${created}</span>
                     <span class="flex items-center space-x-1">
                         <i class="fas fa-arrow-right"></i>
                         <span>Click to manage</span>
@@ -482,9 +512,10 @@
 
         function updateStatistics() {
             const totalSections = networkSections.length;
-            const totalSubnets = networkSections.reduce((sum, section) => sum + section.subnets, 0);
-            const totalIPs = networkSections.reduce((sum, section) => sum + section.ips, 0);
-            const avgUtilization = Math.round(networkSections.reduce((sum, section) => sum + section.utilization, 0) / totalSections);
+            const totalSubnets = networkSections.reduce((sum, section) => sum + (section.subnet_count || 0), 0);
+            const totalIPs = networkSections.reduce((sum, section) => sum + (section.ip_count || 0), 0);
+            const avgUtilization = totalSections > 0 ? 
+                Math.round(networkSections.reduce((sum, section) => sum + (section.utilization || 0), 0) / totalSections) : 0;
             
             document.getElementById('totalSections').textContent = totalSections;
             document.getElementById('totalSubnets').textContent = totalSubnets;
@@ -515,9 +546,9 @@
             const icon = button.querySelector('i');
             icon.classList.add('loading-spinner');
             
-            setTimeout(() => {
+            setTimeout(async () => {
                 icon.classList.remove('loading-spinner');
-                loadSections();
+                await loadSections();
             }, 1000);
         }
 

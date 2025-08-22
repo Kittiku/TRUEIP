@@ -891,13 +891,75 @@ def api_add_ip():
 # ================== NETWORK SECTIONS API ==================
 @app.route('/api/sections')
 def api_get_sections():
-    """API to get all network sections"""
+    """API to get all network sections with statistics"""
     try:
-        sections = get_network_sections()
+        sections = get_network_sections_with_stats()
         return jsonify({'sections': sections})
     except Exception as e:
         print(f"❌ Error getting sections: {e}")
         return jsonify({'error': str(e)}), 500
+
+def get_network_sections_with_stats():
+    """Get all network sections with statistics"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return []
+            
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM network_sections ORDER BY name")
+        sections = cursor.fetchall()
+        
+        # Add statistics for each section
+        for section in sections:
+            section_id = section['id']
+            
+            # Count subnets for this section (using correct table name)
+            try:
+                cursor.execute("""
+                    SELECT COUNT(*) as subnet_count 
+                    FROM subnets 
+                    WHERE section_id = %s
+                """, (section_id,))
+                subnet_result = cursor.fetchone()
+                section['subnet_count'] = subnet_result['subnet_count'] if subnet_result else 0
+            except Error:
+                section['subnet_count'] = 0
+            
+            # Count IPs for this section (using correct table name)
+            try:
+                cursor.execute("""
+                    SELECT COUNT(*) as ip_count,
+                           SUM(CASE WHEN status = 'Used' THEN 1 ELSE 0 END) as used_count,
+                           SUM(CASE WHEN status = 'Available' THEN 1 ELSE 0 END) as available_count,
+                           SUM(CASE WHEN status = 'Reserved' THEN 1 ELSE 0 END) as reserved_count
+                    FROM ip_inventory 
+                    WHERE section_id = %s
+                """, (section_id,))
+                ip_result = cursor.fetchone()
+                
+                total_ips = ip_result['ip_count'] if ip_result else 0
+                used_ips = ip_result['used_count'] if ip_result else 0
+                
+                section['ip_count'] = total_ips
+                section['used_ips'] = used_ips
+                section['available_ips'] = ip_result['available_count'] if ip_result else 0
+                section['reserved_ips'] = ip_result['reserved_count'] if ip_result else 0
+                section['utilization'] = round((used_ips / total_ips * 100)) if total_ips > 0 else 0
+            except Error:
+                section['ip_count'] = 0
+                section['used_ips'] = 0
+                section['available_ips'] = 0
+                section['reserved_ips'] = 0
+                section['utilization'] = 0
+        
+        cursor.close()
+        connection.close()
+        return sections
+        
+    except Error as e:
+        print(f"❌ Error getting network sections with stats: {e}")
+        return []
 
 @app.route('/api/sections', methods=['POST'])
 def api_add_section():
