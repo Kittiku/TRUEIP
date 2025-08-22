@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPAM System - Network Management Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: transform 0.2s, box-shadow 0.2s; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.1); }
+        .loading-spinner { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .status-used { color: #ef4444; background-color: #fef2f2; }
+        .status-available { color: #10b981; background-color: #f0fdf4; }
+        .status-reserved { color: #f59e0b; background-color: #fffbeb; }
+        
+        /* Enhanced Sidebar Styles */
+        .sidebar { 
+            width: 320px; 
+            min-height: 100vh; 
+            position: fixed; 
+            left: 0; 
+            top: 0; 
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            z-index: 40;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .sidebar.auto-hide {
+            transform: translateX(-260px);
+        }
+        
+        .sidebar.auto-hide:hover,
+        .sidebar.auto-hide.show {
+            transform: translateX(0);
+            box-shadow: 4px 0 20px rgba(0,0,0,0.15);
+        }
+        
+        .main-content { 
+            margin-left: 320px; 
+            flex: 1; 
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+            width: calc(100% - 320px);
+            transition: margin-left 0.3s ease, width 0.3s ease;
+        }
+        
+        .main-content.sidebar-collapsed {
+            margin-left: 60px;
+            width: calc(100% - 60px);
+        }
+        
+        .auto-hide-toggle {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 50;
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .auto-hide-toggle:hover {
+            background: rgba(102, 126, 234, 1);
+            transform: scale(1.1);
+        }
+        
+        .auto-hide-toggle.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        /* Section Cards */
+        .section-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border-left: 6px solid;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .section-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.3), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.6s ease;
+        }
+        
+        .section-card:hover::before {
+            transform: translateX(100%);
+        }
+        
+        .section-header {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+            border-radius: 20px;
+            padding: 32px;
+            margin-bottom: 32px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .section-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: shimmer 4s ease-in-out infinite;
+        }
+        
+        @keyframes shimmer {
+            0%, 100% { transform: translateX(-20px) translateY(-20px); }
+            50% { transform: translateX(20px) translateY(20px); }
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .sidebar { width: 280px; }
+            .sidebar.auto-hide { transform: translateX(-220px); }
+            .main-content { 
+                margin-left: 280px; 
+                width: calc(100% - 280px);
+            }
+            .main-content.sidebar-collapsed {
+                margin-left: 60px;
+                width: calc(100% - 60px);
+            }
+            .section-grid {
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                gap: 16px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar { 
+                width: 100%; 
+                transform: translateX(-100%);
+            }
+            .sidebar.auto-hide { transform: translateX(-100%); }
+            .sidebar.auto-hide:hover,
+            .sidebar.auto-hide.show { transform: translateX(0); }
+            .main-content { 
+                margin-left: 0; 
+                width: 100%;
+            }
+            .main-content.sidebar-collapsed {
+                margin-left: 0;
+                width: 100%;
+            }
+            .section-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Auto-hide Toggle Button -->
+    <button class="auto-hide-toggle" onclick="toggleSidebar()" id="sidebarToggle">
+        <i class="fas fa-bars" id="toggleIcon"></i>
+    </button>
+
+    <!-- Sidebar -->
+    <div class="sidebar gradient-bg text-white auto-hide" id="sidebar">
+        <!-- Logo Section -->
+        <div class="p-6 border-b border-white/20">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-white/20 rounded-lg">
+                    <i class="fas fa-network-wired text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold">IPAM System</h1>
+                    <p class="text-white/70 text-sm">Network Management</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Navigation Menu -->
+        <nav class="flex-1 p-4">
+            <div class="space-y-2">
+                <h3 class="text-white/60 text-xs uppercase tracking-wider font-semibold mb-4">Main Menu</h3>
+                
+                <a href="/" class="flex items-center space-x-3 p-3 rounded-lg bg-white/20 text-white hover:bg-white/30 transition-all duration-200">
+                    <i class="fas fa-home text-lg"></i>
+                    <span>Dashboard</span>
+                    <span class="ml-auto bg-white/20 text-xs px-2 py-1 rounded-full">Home</span>
+                </a>
+                
+                <a href="/ip-management" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200">
+                    <i class="fas fa-server text-lg"></i>
+                    <span>IP Management</span>
+                    <span class="ml-auto bg-white/10 text-xs px-2 py-1 rounded-full">Global</span>
+                </a>
+                
+                <a href="/subnet-manager" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200">
+                    <i class="fas fa-sitemap text-lg"></i>
+                    <span>Subnet Manager</span>
+                    <span class="ml-auto bg-white/10 text-xs px-2 py-1 rounded-full">Manage</span>
+                </a>
+                
+                <a href="/vrf-monitoring" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200">
+                    <i class="fas fa-project-diagram text-lg"></i>
+                    <span>VRF Monitoring</span>
+                    <span class="ml-auto bg-white/10 text-xs px-2 py-1 rounded-full">Monitor</span>
+                </a>
+            </div>
+
+            <div class="mt-8 space-y-2">
+                <h3 class="text-white/60 text-xs uppercase tracking-wider font-semibold mb-4">Advanced Tools</h3>
+                
+                <a href="/ip-auto-allocation" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200">
+                    <i class="fas fa-magic text-lg"></i>
+                    <span>IP Auto Allocation</span>
+                    <span class="ml-auto bg-green-500/20 text-xs px-2 py-1 rounded-full">Smart</span>
+                </a>
+                
+                <a href="/csv-import" class="flex items-center space-x-3 p-3 rounded-lg text-white/80 hover:bg-white/20 hover:text-white transition-all duration-200">
+                    <i class="fas fa-file-csv text-lg"></i>
+                    <span>CSV Import</span>
+                    <span class="ml-auto bg-blue-500/20 text-xs px-2 py-1 rounded-full">Bulk</span>
+                </a>
+            </div>
+        </nav>
+
+        <!-- System Status -->
+        <div class="p-4 border-t border-white/20">
+            <div class="bg-white/10 rounded-lg p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="text-white/70 text-sm">System Status</span>
+                    <span class="flex items-center space-x-1">
+                        <div class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                        <span class="text-green-400 text-xs">Online</span>
+                    </span>
+                </div>
+                <div class="text-white/60 text-xs">
+                    Last updated: <span id="lastUpdate"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content sidebar-collapsed" id="mainContent">
+        <div class="p-8">
+            <!-- Header Section -->
+            <div class="section-header">
+                <div class="relative z-10">
+                    <h1 class="text-4xl font-bold text-gray-800 mb-4">
+                        <i class="fas fa-layer-group text-blue-600 mr-4"></i>
+                        Network Sections
+                    </h1>
+                    <p class="text-gray-600 text-lg">
+                        Organize and manage your network infrastructure with dedicated sections
+                    </p>
+                </div>
+            </div>
+
+            <!-- Statistics Overview -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="flex items-center justify-center w-12 h-12 mx-auto mb-3 bg-blue-100 rounded-lg">
+                        <i class="fas fa-layer-group text-blue-600 text-xl"></i>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-800 mb-1" id="totalSections">10</div>
+                    <div class="text-gray-600 text-sm">Total Sections</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="flex items-center justify-center w-12 h-12 mx-auto mb-3 bg-green-100 rounded-lg">
+                        <i class="fas fa-sitemap text-green-600 text-xl"></i>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-800 mb-1" id="totalSubnets">-</div>
+                    <div class="text-gray-600 text-sm">Total Subnets</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="flex items-center justify-center w-12 h-12 mx-auto mb-3 bg-purple-100 rounded-lg">
+                        <i class="fas fa-server text-purple-600 text-xl"></i>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-800 mb-1" id="totalIPs">-</div>
+                    <div class="text-gray-600 text-sm">Total IPs</div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="flex items-center justify-center w-12 h-12 mx-auto mb-3 bg-yellow-100 rounded-lg">
+                        <i class="fas fa-chart-line text-yellow-600 text-xl"></i>
+                    </div>
+                    <div class="text-2xl font-bold text-gray-800 mb-1" id="avgUtilization">-%</div>
+                    <div class="text-gray-600 text-sm">Avg Utilization</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="flex flex-wrap gap-4 mb-8">
+                <button onclick="openAddSectionModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-all duration-200 flex items-center space-x-2 card-hover">
+                    <i class="fas fa-plus"></i>
+                    <span>Add New Section</span>
+                </button>
+                
+                <button onclick="refreshSections()" class="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-all duration-200 flex items-center space-x-2 card-hover">
+                    <i class="fas fa-sync-alt"></i>
+                    <span>Refresh</span>
+                </button>
+                
+                <button onclick="exportSections()" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg transition-all duration-200 flex items-center space-x-2 card-hover">
+                    <i class="fas fa-download"></i>
+                    <span>Export</span>
+                </button>
+            </div>
+
+            <!-- Network Sections Grid -->
+            <div class="section-grid" id="sectionsGrid">
+                <!-- Sections will be loaded here by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Sample network sections data
+        const networkSections = [
+            { id: 1, name: "CORE-NETWORK", description: "Core Network Infrastructure", color: "#17a2b8", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
+            { id: 2, name: "Default", description: "Default network section", color: "#007bff", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
+            { id: 3, name: "Delete_True", description: "Archived True networks", color: "#6c757d", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
+            { id: 4, name: "Dtac", description: "DTAC Network Infrastructure", color: "#fd7e14", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
+            { id: 5, name: "Gi", description: "All Gi Path Network", color: "#28a745", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
+            { id: 6, name: "Public IP", description: "Public IP Address Pool", color: "#6f42c1", subnets: 0, ips: 0, utilization: 0, created: "2025-08-22" },
+            { id: 7, name: "Production", description: "Production Environment", color: "#dc3545", subnets: 15, ips: 450, utilization: 75, created: "2025-08-22" },
+            { id: 8, name: "Development", description: "Development Environment", color: "#20c997", subnets: 8, ips: 200, utilization: 45, created: "2025-08-22" },
+            { id: 9, name: "Testing", description: "Testing Environment", color: "#ffc107", subnets: 5, ips: 100, utilization: 30, created: "2025-08-22" },
+            { id: 10, name: "DMZ", description: "Demilitarized Zone", color: "#e83e8c", subnets: 3, ips: 75, utilization: 60, created: "2025-08-22" }
+        ];
+
+        // Sidebar functionality
+        let sidebarHidden = true;
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const mainContent = document.getElementById('mainContent');
+            const toggleIcon = document.getElementById('toggleIcon');
+            
+            sidebarHidden = !sidebarHidden;
+            
+            if (sidebarHidden) {
+                sidebar.classList.add('auto-hide');
+                mainContent.classList.add('sidebar-collapsed');
+                toggleIcon.className = 'fas fa-bars';
+            } else {
+                sidebar.classList.remove('auto-hide');
+                mainContent.classList.remove('sidebar-collapsed');
+                toggleIcon.className = 'fas fa-times';
+            }
+        }
+
+        // Load sections
+        function loadSections() {
+            const grid = document.getElementById('sectionsGrid');
+            grid.innerHTML = '';
+            
+            networkSections.forEach(section => {
+                const sectionCard = createSectionCard(section);
+                grid.appendChild(sectionCard);
+            });
+            
+            updateStatistics();
+        }
+
+        function createSectionCard(section) {
+            const card = document.createElement('div');
+            card.className = 'section-card card-hover';
+            card.style.borderLeftColor = section.color;
+            card.onclick = () => openSection(section.id);
+            
+            card.innerHTML = `
+                <div class="flex items-start justify-between mb-4">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-4 h-4 rounded-full" style="background-color: ${section.color}"></div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-800">${section.name}</h3>
+                            <p class="text-gray-600 text-sm">${section.description}</p>
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button onclick="event.stopPropagation(); editSection(${section.id})" class="text-gray-400 hover:text-blue-600 transition-colors">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                        <button onclick="event.stopPropagation(); deleteSection(${section.id})" class="text-gray-400 hover:text-red-600 transition-colors">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-3 gap-4 mb-4">
+                    <div class="text-center">
+                        <div class="text-xl font-bold text-blue-600">${section.subnets}</div>
+                        <div class="text-xs text-gray-500">Subnets</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xl font-bold text-green-600">${section.ips}</div>
+                        <div class="text-xs text-gray-500">IPs</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-xl font-bold text-purple-600">${section.utilization}%</div>
+                        <div class="text-xs text-gray-500">Used</div>
+                    </div>
+                </div>
+                
+                <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
+                    <div class="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-500" style="width: ${section.utilization}%"></div>
+                </div>
+                
+                <div class="flex items-center justify-between text-xs text-gray-500">
+                    <span>Created: ${section.created}</span>
+                    <span class="flex items-center space-x-1">
+                        <i class="fas fa-arrow-right"></i>
+                        <span>Click to manage</span>
+                    </span>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        function updateStatistics() {
+            const totalSections = networkSections.length;
+            const totalSubnets = networkSections.reduce((sum, section) => sum + section.subnets, 0);
+            const totalIPs = networkSections.reduce((sum, section) => sum + section.ips, 0);
+            const avgUtilization = Math.round(networkSections.reduce((sum, section) => sum + section.utilization, 0) / totalSections);
+            
+            document.getElementById('totalSections').textContent = totalSections;
+            document.getElementById('totalSubnets').textContent = totalSubnets;
+            document.getElementById('totalIPs').textContent = totalIPs;
+            document.getElementById('avgUtilization').textContent = avgUtilization + '%';
+        }
+
+        function openSection(sectionId) {
+            window.location.href = `/section/${sectionId}/dashboard`;
+        }
+
+        function openAddSectionModal() {
+            alert('Add Section Modal - To be implemented');
+        }
+
+        function editSection(sectionId) {
+            alert(`Edit Section ${sectionId} - To be implemented`);
+        }
+
+        function deleteSection(sectionId) {
+            if (confirm('Are you sure you want to delete this section?')) {
+                alert(`Delete Section ${sectionId} - To be implemented`);
+            }
+        }
+
+        function refreshSections() {
+            const button = event.target.closest('button');
+            const icon = button.querySelector('i');
+            icon.classList.add('loading-spinner');
+            
+            setTimeout(() => {
+                icon.classList.remove('loading-spinner');
+                loadSections();
+            }, 1000);
+        }
+
+        function exportSections() {
+            alert('Export functionality - To be implemented');
+        }
+
+        // Update last update time
+        function updateLastUpdateTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            document.getElementById('lastUpdate').textContent = timeString;
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSections();
+            updateLastUpdateTime();
+            setInterval(updateLastUpdateTime, 30000); // Update every 30 seconds
+        });
+    </script>
+</body>
+</html>

@@ -379,12 +379,22 @@ def get_statistics():
 # Routes
 @app.route('/')
 def index():
-    """Advanced IP Management Homepage"""
+    """Network Sections Dashboard - Main Homepage"""
+    return render_template('network_dashboard.html')
+
+@app.route('/ip-management-classic')
+def ip_management_classic():
+    """Classic IP Management Interface"""
     return render_template('ip_management_clean.html')
 
 @app.route('/network-sections')
 def network_sections():
-    """Network Sections Management page"""
+    """Network Sections Management page (Legacy)"""
+    return render_template('network_sections.html')
+
+@app.route('/network-sections-legacy')
+def network_sections_legacy():
+    """Legacy Network Sections page"""
     return render_template('network_sections.html')
 
 @app.route('/section-management')
@@ -401,6 +411,21 @@ def csv_import_page():
 def ip_management():
     """Advanced IP Management page"""
     return render_template('ip_management_clean.html')
+
+@app.route('/subnet-manager')
+def subnet_manager():
+    """Subnet Manager page"""
+    return render_template('subnet_manager_fast.html')
+
+@app.route('/vrf-monitoring')
+def vrf_monitoring():
+    """VRF Monitoring page"""
+    return render_template('subnet_monitor.html')
+
+@app.route('/ip-auto-allocation')
+def ip_auto_allocation():
+    """IP Auto Allocation page"""
+    return render_template('ip_auto_allocation.html')
 
 @app.route('/ip-management-clean')
 def ip_management_clean():
@@ -2633,11 +2658,6 @@ def api_fast_subnet_ips():
 def subnet_monitor():
     """Subnet Monitor Dashboard"""
     return render_template('subnet_monitor.html')
-
-@app.route('/ip-auto-allocation')
-def ip_auto_allocation():
-    """IP Auto Allocation - Smart IP Management"""
-    return render_template('ip_auto_allocation.html')
 
 @app.route('/api/ip-data')
 def get_ip_data():
