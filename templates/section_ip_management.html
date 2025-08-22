@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ section.name }} - IP Management - IPAM System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow-y: auto;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            border-radius: 8px;
+            margin: 2px 8px;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+        .content-area {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .section-header {
+            background: linear-gradient(135deg, {{ section.color }}22, {{ section.color }}44);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-left: 6px solid {{ section.color }};
+        }
+        .breadcrumb {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .ip-table {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+        }
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.375rem;
+        }
+        .status-active { background-color: #d1ecf1; color: #0c5460; }
+        .status-reserved { background-color: #fff3cd; color: #856404; }
+        .status-available { background-color: #d4edda; color: #155724; }
+        .filter-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 sidebar">
+                <!-- Section Header -->
+                <div class="p-3 border-bottom">
+                    <div class="d-flex align-items-center">
+                        <div class="section-color-indicator" style="background: {{ section.color }}; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+                        <h5 class="mb-0">{{ section.name }}</h5>
+                    </div>
+                    <small class="text-light opacity-75">{{ section.description }}</small>
+                </div>
+
+                <!-- Navigation Menu -->
+                <nav class="nav flex-column p-3">
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3 mt-2">Main Menu</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/dashboard">
+                        <i class="fas fa-tachometer-alt me-2"></i>
+                        Dashboard
+                        <span class="badge bg-light text-dark ms-auto">Overview</span>
+                    </a>
+                    
+                    <a class="nav-link active" href="/section/{{ section.id }}/ip-management">
+                        <i class="fas fa-network-wired me-2"></i>
+                        IP Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.ip_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/subnet-management">
+                        <i class="fas fa-sitemap me-2"></i>
+                        Subnet Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.subnet_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/vrf-monitoring">
+                        <i class="fas fa-project-diagram me-2"></i>
+                        VRF Monitoring
+                        <span class="badge bg-light text-dark ms-auto">Monitor</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3">Advanced Tools</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-auto-allocation">
+                        <i class="fas fa-magic me-2"></i>
+                        IP Auto Allocation
+                        <span class="badge bg-success ms-auto">Smart</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/csv-import">
+                        <i class="fas fa-file-csv me-2"></i>
+                        CSV Import
+                        <span class="badge bg-info ms-auto">Bulk</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <a class="nav-link" href="/network-sections">
+                        <i class="fas fa-arrow-left me-2"></i>
+                        Back to Sections
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 content-area">
+                <!-- Breadcrumb -->
+                <div class="p-3">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="/network-sections">Network Sections</a></li>
+                            <li class="breadcrumb-item"><a href="/section/{{ section.id }}/dashboard">{{ section.name }}</a></li>
+                            <li class="breadcrumb-item active">IP Management</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Section Header -->
+                <div class="section-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h2 class="mb-2">
+                                <i class="fas fa-network-wired me-3"></i>
+                                {{ section.name }} - IP Management
+                            </h2>
+                            <p class="mb-0 text-muted">View & Manage IP addresses for this section</p>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addIPModal">
+                                <i class="fas fa-plus me-2"></i>Add IP Address
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="refreshIPData()">
+                                <i class="fas fa-sync-alt me-2"></i>Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filter-card">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label class="form-label">Search IP Address</label>
+                            <input type="text" class="form-control" id="searchIP" placeholder="192.168.1.1">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" id="filterStatus">
+                                <option value="">All Status</option>
+                                <option value="Active">Active</option>
+                                <option value="Reserved">Reserved</option>
+                                <option value="Available">Available</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Subnet</label>
+                            <select class="form-select" id="filterSubnet">
+                                <option value="">All Subnets</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Per Page</label>
+                            <select class="form-select" id="perPage">
+                                <option value="25">25</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                                <option value="200">200</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-outline-secondary d-block w-100" onclick="applyFilters()">
+                                <i class="fas fa-filter me-2"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- IP Table -->
+                <div class="ip-table">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>IP Address</th>
+                                    <th>Hostname</th>
+                                    <th>Status</th>
+                                    <th>Subnet</th>
+                                    <th>Description</th>
+                                    <th>Owner</th>
+                                    <th>Last Seen</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ipTableBody">
+                                <tr>
+                                    <td colspan="8" class="text-center py-4">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                        <div class="mt-2">Loading IP addresses...</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <div class="d-flex justify-content-between align-items-center mt-4">
+                    <div class="text-muted">
+                        Showing <span id="showingFrom">0</span> to <span id="showingTo">0</span> of <span id="totalIPs">0</span> entries
+                    </div>
+                    <nav>
+                        <ul class="pagination mb-0" id="pagination">
+                            <!-- Pagination will be generated by JavaScript -->
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add IP Modal -->
+    <div class="modal fade" id="addIPModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add IP Address to {{ section.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addIPForm">
+                        <div class="mb-3">
+                            <label class="form-label">IP Address *</label>
+                            <input type="text" class="form-control" name="ip_address" required 
+                                   placeholder="192.168.1.100">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Hostname</label>
+                            <input type="text" class="form-control" name="hostname" 
+                                   placeholder="server01.example.com">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Status *</label>
+                            <select class="form-select" name="status" required>
+                                <option value="Active">Active</option>
+                                <option value="Reserved">Reserved</option>
+                                <option value="Available">Available</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Subnet</label>
+                            <select class="form-select" name="subnet_id" id="addIPSubnet">
+                                <option value="">Select Subnet</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" name="description" rows="2" 
+                                      placeholder="Brief description of this IP usage"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Owner</label>
+                            <input type="text" class="form-control" name="owner" 
+                                   placeholder="IT Department">
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addIPAddress()">Add IP Address</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentPage = 1;
+        let currentFilters = {};
+        
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSubnets();
+            loadIPAddresses();
+            
+            // Setup search on enter
+            document.getElementById('searchIP').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    applyFilters();
+                }
+            });
+        });
+        
+        function loadSubnets() {
+            fetch(`/api/section/{{ section.id }}/subnets`)
+                .then(response => response.json())
+                .then(data => {
+                    const filterSubnet = document.getElementById('filterSubnet');
+                    const addIPSubnet = document.getElementById('addIPSubnet');
+                    
+                    // Clear existing options (keep "All Subnets" for filter)
+                    filterSubnet.innerHTML = '<option value="">All Subnets</option>';
+                    addIPSubnet.innerHTML = '<option value="">Select Subnet</option>';
+                    
+                    data.forEach(subnet => {
+                        filterSubnet.innerHTML += `<option value="${subnet.id}">${subnet.subnet}</option>`;
+                        addIPSubnet.innerHTML += `<option value="${subnet.id}">${subnet.subnet}</option>`;
+                    });
+                })
+                .catch(error => {
+                    console.error('Error loading subnets:', error);
+                });
+        }
+        
+        function loadIPAddresses(page = 1) {
+            const searchIP = document.getElementById('searchIP').value;
+            const filterStatus = document.getElementById('filterStatus').value;
+            const filterSubnet = document.getElementById('filterSubnet').value;
+            const perPage = document.getElementById('perPage').value;
+            
+            const params = new URLSearchParams({
+                page: page,
+                per_page: perPage,
+                section_id: {{ section.id }}
+            });
+            
+            if (searchIP) params.append('search', searchIP);
+            if (filterStatus) params.append('status', filterStatus);
+            if (filterSubnet) params.append('subnet_id', filterSubnet);
+            
+            fetch(`/api/ip-addresses?${params}`)
+                .then(response => response.json())
+                .then(data => {
+                    displayIPAddresses(data.ips);
+                    updatePagination(data.pagination);
+                })
+                .catch(error => {
+                    console.error('Error loading IP addresses:', error);
+                    document.getElementById('ipTableBody').innerHTML = 
+                        '<tr><td colspan="8" class="text-center text-danger">Error loading IP addresses</td></tr>';
+                });
+        }
+        
+        function displayIPAddresses(ips) {
+            const tbody = document.getElementById('ipTableBody');
+            
+            if (!ips || ips.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No IP addresses found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = ips.map(ip => `
+                <tr>
+                    <td><strong>${ip.ip_address}</strong></td>
+                    <td>${ip.hostname || '-'}</td>
+                    <td><span class="badge status-${ip.status.toLowerCase()}">${ip.status}</span></td>
+                    <td>${ip.subnet || '-'}</td>
+                    <td>${ip.description || '-'}</td>
+                    <td>${ip.owner || '-'}</td>
+                    <td>${ip.last_seen ? new Date(ip.last_seen).toLocaleDateString() : '-'}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary" onclick="editIP(${ip.id})" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-outline-danger" onclick="deleteIP(${ip.id})" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+        
+        function updatePagination(pagination) {
+            document.getElementById('showingFrom').textContent = pagination.from || 0;
+            document.getElementById('showingTo').textContent = pagination.to || 0;
+            document.getElementById('totalIPs').textContent = pagination.total || 0;
+            
+            const paginationEl = document.getElementById('pagination');
+            let html = '';
+            
+            // Previous button
+            if (pagination.page > 1) {
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="loadIPAddresses(${pagination.page - 1})">Previous</a></li>`;
+            }
+            
+            // Page numbers
+            for (let i = Math.max(1, pagination.page - 2); i <= Math.min(pagination.pages, pagination.page + 2); i++) {
+                html += `<li class="page-item ${i === pagination.page ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="loadIPAddresses(${i})">${i}</a>
+                </li>`;
+            }
+            
+            // Next button
+            if (pagination.page < pagination.pages) {
+                html += `<li class="page-item"><a class="page-link" href="#" onclick="loadIPAddresses(${pagination.page + 1})">Next</a></li>`;
+            }
+            
+            paginationEl.innerHTML = html;
+        }
+        
+        function applyFilters() {
+            currentPage = 1;
+            loadIPAddresses(1);
+        }
+        
+        function refreshIPData() {
+            loadIPAddresses(currentPage);
+        }
+        
+        function addIPAddress() {
+            const form = document.getElementById('addIPForm');
+            const formData = new FormData(form);
+            
+            // Add section_id
+            formData.append('section_id', {{ section.id }});
+            
+            const data = Object.fromEntries(formData);
+            
+            fetch('/api/ip-addresses', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    alert('IP address added successfully!');
+                    bootstrap.Modal.getInstance(document.getElementById('addIPModal')).hide();
+                    form.reset();
+                    loadIPAddresses(currentPage);
+                } else {
+                    alert('Error: ' + result.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error adding IP:', error);
+                alert('Error adding IP address');
+            });
+        }
+        
+        function editIP(id) {
+            // Implementation for editing IP
+            alert('Edit IP functionality to be implemented');
+        }
+        
+        function deleteIP(id) {
+            if (confirm('Are you sure you want to delete this IP address?')) {
+                fetch(`/api/ip-addresses/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        alert('IP address deleted successfully!');
+                        loadIPAddresses(currentPage);
+                    } else {
+                        alert('Error: ' + result.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting IP:', error);
+                    alert('Error deleting IP address');
+                });
+            }
+        }
+    </script>
+</body>
+</html>

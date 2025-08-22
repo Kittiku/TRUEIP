@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ section.name }} - CSV Import - IPAM System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow-y: auto;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            border-radius: 8px;
+            margin: 2px 8px;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+        .content-area {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .section-header {
+            background: linear-gradient(135deg, #17a2b822, #17a2b844);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-left: 6px solid #17a2b8;
+        }
+        .breadcrumb {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .feature-card {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 sidebar">
+                <!-- Section Header -->
+                <div class="p-3 border-bottom">
+                    <div class="d-flex align-items-center">
+                        <div class="section-color-indicator" style="background: {{ section.color }}; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+                        <h5 class="mb-0">{{ section.name }}</h5>
+                    </div>
+                    <small class="text-light opacity-75">{{ section.description }}</small>
+                </div>
+
+                <!-- Navigation Menu -->
+                <nav class="nav flex-column p-3">
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3 mt-2">Main Menu</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/dashboard">
+                        <i class="fas fa-tachometer-alt me-2"></i>
+                        Dashboard
+                        <span class="badge bg-light text-dark ms-auto">Overview</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-management">
+                        <i class="fas fa-network-wired me-2"></i>
+                        IP Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.ip_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/subnet-management">
+                        <i class="fas fa-sitemap me-2"></i>
+                        Subnet Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.subnet_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/vrf-monitoring">
+                        <i class="fas fa-project-diagram me-2"></i>
+                        VRF Monitoring
+                        <span class="badge bg-light text-dark ms-auto">Monitor</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3">Advanced Tools</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-auto-allocation">
+                        <i class="fas fa-magic me-2"></i>
+                        IP Auto Allocation
+                        <span class="badge bg-success ms-auto">Smart</span>
+                    </a>
+                    
+                    <a class="nav-link active" href="/section/{{ section.id }}/csv-import">
+                        <i class="fas fa-file-csv me-2"></i>
+                        CSV Import
+                        <span class="badge bg-info ms-auto">Bulk</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <a class="nav-link" href="/network-sections">
+                        <i class="fas fa-arrow-left me-2"></i>
+                        Back to Sections
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 content-area">
+                <!-- Breadcrumb -->
+                <div class="p-3">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="/network-sections">Network Sections</a></li>
+                            <li class="breadcrumb-item"><a href="/section/{{ section.id }}/dashboard">{{ section.name }}</a></li>
+                            <li class="breadcrumb-item active">CSV Import</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Section Header -->
+                <div class="section-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h2 class="mb-2">
+                                <i class="fas fa-file-csv me-3"></i>
+                                {{ section.name }} - CSV Import
+                            </h2>
+                            <p class="mb-0 text-muted">Bulk import IP addresses and subnets for this section</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature Cards -->
+                <div class="row">
+                    <div class="col-lg-6">
+                        <div class="feature-card">
+                            <i class="fas fa-file-csv fa-3x text-info mb-3"></i>
+                            <h4>CSV Import - Coming Soon</h4>
+                            <p class="text-muted">
+                                Bulk import IP addresses and subnets from CSV files.
+                            </p>
+                            <ul class="list-unstyled text-start mt-3">
+                                <li><i class="fas fa-check text-success me-2"></i>IP address bulk import</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Subnet bulk import</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Data validation</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Import preview</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Error reporting</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="feature-card">
+                            <i class="fas fa-download fa-3x text-success mb-3"></i>
+                            <h4>Export Templates</h4>
+                            <p class="text-muted">
+                                Download CSV templates for importing data.
+                            </p>
+                            <div class="mt-3">
+                                <button class="btn btn-success me-2" onclick="downloadTemplate('ip')">
+                                    <i class="fas fa-download me-2"></i>IP Template
+                                </button>
+                                <button class="btn btn-outline-success" onclick="downloadTemplate('subnet')">
+                                    <i class="fas fa-download me-2"></i>Subnet Template
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Manual Options -->
+                <div class="feature-card">
+                    <h4><i class="fas fa-tools me-2"></i>Manual Data Entry (Current)</h4>
+                    <p class="text-muted mb-4">
+                        While CSV import is being developed, you can manually add data through the management interfaces.
+                    </p>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <a href="/section/{{ section.id }}/ip-management" class="btn btn-outline-primary w-100 mb-2">
+                                <i class="fas fa-plus me-2"></i>Add IPs Manually
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <a href="/section/{{ section.id }}/subnet-management" class="btn btn-outline-success w-100 mb-2">
+                                <i class="fas fa-plus me-2"></i>Add Subnets Manually
+                            </a>
+                        </div>
+                        <div class="col-md-4">
+                            <a href="/csv-import" class="btn btn-outline-info w-100 mb-2">
+                                <i class="fas fa-file-csv me-2"></i>Global CSV Import
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sample CSV Format -->
+                <div class="feature-card text-start">
+                    <h5><i class="fas fa-table me-2"></i>Expected CSV Format</h5>
+                    <p class="text-muted">When CSV import becomes available, it will support these formats:</p>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>IP Addresses CSV:</h6>
+                            <pre class="bg-light p-3 rounded"><code>ip_address,hostname,status,description,owner
+192.168.1.10,server01,Active,Web Server,IT Dept
+192.168.1.11,server02,Reserved,Database Server,Dev Team</code></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Subnets CSV:</h6>
+                            <pre class="bg-light p-3 rounded"><code>subnet,description,vlan,location,vrf
+192.168.1.0/24,DMZ Network,100,DC1,DMZ-VRF
+192.168.2.0/24,Internal Network,200,DC1,CORP-VRF</code></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function downloadTemplate(type) {
+            if (type === 'ip') {
+                const content = 'ip_address,hostname,status,description,owner\n192.168.1.10,server01,Active,Web Server,IT Dept\n';
+                downloadCSV(content, 'ip_template.csv');
+            } else if (type === 'subnet') {
+                const content = 'subnet,description,vlan,location,vrf\n192.168.1.0/24,DMZ Network,100,DC1,DMZ-VRF\n';
+                downloadCSV(content, 'subnet_template.csv');
+            }
+        }
+        
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+</html>

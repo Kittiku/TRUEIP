@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ section.name }} - Subnet Management - IPAM System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .sidebar {
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow-y: auto;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            border-radius: 8px;
+            margin: 2px 8px;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+        .content-area {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .section-header {
+            background: linear-gradient(135deg, #007bff22, #007bff44);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-left: 6px solid #007bff;
+        }
+        .breadcrumb {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .subnet-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border-left: 4px solid #007bff;
+            transition: transform 0.2s ease;
+        }
+        .subnet-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+        }
+        .utilization-bar {
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .filter-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 sidebar">
+                <!-- Section Header -->
+                <div class="p-3 border-bottom">
+                    <div class="d-flex align-items-center">
+                        <div class="section-color-indicator" style="background: {{ section.color }}; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+                        <h5 class="mb-0">{{ section.name }}</h5>
+                    </div>
+                    <small class="text-light opacity-75">{{ section.description }}</small>
+                </div>
+
+                <!-- Navigation Menu -->
+                <nav class="nav flex-column p-3">
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3 mt-2">Main Menu</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/dashboard">
+                        <i class="fas fa-tachometer-alt me-2"></i>
+                        Dashboard
+                        <span class="badge bg-light text-dark ms-auto">Overview</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-management">
+                        <i class="fas fa-network-wired me-2"></i>
+                        IP Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.ip_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link active" href="/section/{{ section.id }}/subnet-management">
+                        <i class="fas fa-sitemap me-2"></i>
+                        Subnet Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.subnet_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/vrf-monitoring">
+                        <i class="fas fa-project-diagram me-2"></i>
+                        VRF Monitoring
+                        <span class="badge bg-light text-dark ms-auto">Monitor</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3">Advanced Tools</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-auto-allocation">
+                        <i class="fas fa-magic me-2"></i>
+                        IP Auto Allocation
+                        <span class="badge bg-success ms-auto">Smart</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/csv-import">
+                        <i class="fas fa-file-csv me-2"></i>
+                        CSV Import
+                        <span class="badge bg-info ms-auto">Bulk</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <a class="nav-link" href="/network-sections">
+                        <i class="fas fa-arrow-left me-2"></i>
+                        Back to Sections
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 content-area">
+                <!-- Breadcrumb -->
+                <div class="p-3">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="/network-sections">Network Sections</a></li>
+                            <li class="breadcrumb-item"><a href="/section/{{ section.id }}/dashboard">{{ section.name }}</a></li>
+                            <li class="breadcrumb-item active">Subnet Management</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Section Header -->
+                <div class="section-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h2 class="mb-2">
+                                <i class="fas fa-sitemap me-3"></i>
+                                {{ section.name }} - Subnet Management
+                            </h2>
+                            <p class="mb-0 text-muted">View & Manage subnets for this section</p>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSubnetModal">
+                                <i class="fas fa-plus me-2"></i>Add Subnet
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="refreshSubnetData()">
+                                <i class="fas fa-sync-alt me-2"></i>Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="filter-card">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <label class="form-label">Search Subnet</label>
+                            <input type="text" class="form-control" id="searchSubnet" placeholder="192.168.1.0/24">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Utilization</label>
+                            <select class="form-select" id="filterUtilization">
+                                <option value="">All Utilization</option>
+                                <option value="low">Low (0-30%)</option>
+                                <option value="medium">Medium (31-70%)</option>
+                                <option value="high">High (71-100%)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">CIDR</label>
+                            <select class="form-select" id="filterCIDR">
+                                <option value="">All CIDR</option>
+                                <option value="24">/24</option>
+                                <option value="23">/23</option>
+                                <option value="22">/22</option>
+                                <option value="21">/21</option>
+                                <option value="20">/20</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">&nbsp;</label>
+                            <button class="btn btn-outline-secondary d-block w-100" onclick="applyFilters()">
+                                <i class="fas fa-filter me-2"></i>Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subnets Display -->
+                <div id="subnetsContainer">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <div class="mt-2">Loading subnets...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Subnet Modal -->
+    <div class="modal fade" id="addSubnetModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Subnet to {{ section.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addSubnetForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Subnet CIDR *</label>
+                                    <input type="text" class="form-control" name="subnet" required 
+                                           placeholder="192.168.1.0/24">
+                                    <div class="form-text">Enter subnet in CIDR notation</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">VLAN ID</label>
+                                    <input type="number" class="form-control" name="vlan" 
+                                           placeholder="100" min="1" max="4094">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" name="description" rows="2" 
+                                      placeholder="Brief description of this subnet usage"></textarea>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Device/Router</label>
+                                    <input type="text" class="form-control" name="device" 
+                                           placeholder="router01.example.com">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Location</label>
+                                    <input type="text" class="form-control" name="location" 
+                                           placeholder="Data Center A">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">VRF</label>
+                                    <input type="text" class="form-control" name="vrf" 
+                                           placeholder="CORP-VRF">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Customer</label>
+                                    <input type="text" class="form-control" name="customer" 
+                                           placeholder="IT Department">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Name Servers</label>
+                                    <input type="text" class="form-control" name="nameservers" 
+                                           placeholder="8.8.8.8,8.8.4.4">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Threshold (%)</label>
+                                    <input type="number" class="form-control" name="threshold_percentage" 
+                                           value="80" min="1" max="100">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="mark_as_pool" id="markAsPool">
+                                    <label class="form-check-label" for="markAsPool">
+                                        Mark as Pool
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="discover_new_hosts" id="discoverHosts">
+                                    <label class="form-check-label" for="discoverHosts">
+                                        Discover New Hosts
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="addSubnet()">Add Subnet</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Load data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSubnets();
+            
+            // Setup search on enter
+            document.getElementById('searchSubnet').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    applyFilters();
+                }
+            });
+        });
+        
+        function loadSubnets() {
+            const searchSubnet = document.getElementById('searchSubnet').value;
+            const filterUtilization = document.getElementById('filterUtilization').value;
+            const filterCIDR = document.getElementById('filterCIDR').value;
+            
+            const params = new URLSearchParams({
+                section_id: '{{ section.id }}'
+            });
+            
+            if (searchSubnet) params.append('search', searchSubnet);
+            if (filterUtilization) params.append('utilization', filterUtilization);
+            if (filterCIDR) params.append('cidr', filterCIDR);
+            
+            fetch(`/api/subnets/enhanced?${params}`)
+                .then(response => response.json())
+                .then(data => {
+                    displaySubnets(data.subnets || data);
+                })
+                .catch(error => {
+                    console.error('Error loading subnets:', error);
+                    document.getElementById('subnetsContainer').innerHTML = 
+                        '<div class="text-center text-danger py-5">Error loading subnets</div>';
+                });
+        }
+        
+        function displaySubnets(subnets) {
+            const container = document.getElementById('subnetsContainer');
+            
+            if (!subnets || subnets.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-sitemap fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">No subnets found</h5>
+                        <p class="text-muted">Add your first subnet to get started</p>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSubnetModal">
+                            <i class="fas fa-plus me-2"></i>Add Subnet
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = subnets.map(subnet => {
+                const utilization = calculateUtilization(subnet);
+                const utilizationColor = getUtilizationColor(utilization);
+                
+                return `
+                    <div class="subnet-card">
+                        <div class="row align-items-center">
+                            <div class="col-md-3">
+                                <h5 class="mb-1">${subnet.subnet}</h5>
+                                <small class="text-muted">${subnet.description || 'No description'}</small>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="text-center">
+                                    <strong class="text-${utilizationColor}">${utilization}%</strong>
+                                    <div class="utilization-bar bg-light mt-1">
+                                        <div class="bg-${utilizationColor}" style="width: ${utilization}%; height: 100%;"></div>
+                                    </div>
+                                    <small class="text-muted">Utilization</small>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="text-center">
+                                    <strong>${subnet.used_ips || 0}</strong> / <span class="text-muted">${subnet.capacity || 254}</span>
+                                    <br><small class="text-muted">IPs Used</small>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="text-center">
+                                    ${subnet.vlan ? `<span class="badge bg-info">VLAN ${subnet.vlan}</span>` : '<span class="text-muted">No VLAN</span>'}
+                                    <br><small class="text-muted">VLAN ID</small>
+                                </div>
+                            </div>
+                            <div class="col-md-2">
+                                <div class="text-center">
+                                    <small class="text-muted">${subnet.location || 'No location'}</small>
+                                    <br><small class="text-muted">${subnet.device || 'No device'}</small>
+                                </div>
+                            </div>
+                            <div class="col-md-1">
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="/section/{{ section.id }}/subnet/${subnet.id}/ips">
+                                            <i class="fas fa-network-wired me-2"></i>View IPs
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#" onclick="editSubnet(${subnet.id})">
+                                            <i class="fas fa-edit me-2"></i>Edit
+                                        </a></li>
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteSubnet(${subnet.id})">
+                                            <i class="fas fa-trash me-2"></i>Delete
+                                        </a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function calculateUtilization(subnet) {
+            if (!subnet.capacity || subnet.capacity === 0) return 0;
+            return Math.round((subnet.used_ips || 0) / subnet.capacity * 100);
+        }
+        
+        function getUtilizationColor(utilization) {
+            if (utilization <= 30) return 'success';
+            if (utilization <= 70) return 'warning';
+            return 'danger';
+        }
+        
+        function applyFilters() {
+            loadSubnets();
+        }
+        
+        function refreshSubnetData() {
+            loadSubnets();
+        }
+        
+        function addSubnet() {
+            const form = document.getElementById('addSubnetForm');
+            const formData = new FormData(form);
+            
+            // Add section_id
+            formData.append('section_id', '{{ section.id }}');
+            
+            const data = Object.fromEntries(formData);
+            
+            // Convert checkboxes to boolean
+            data.mark_as_pool = form.mark_as_pool.checked;
+            data.discover_new_hosts = form.discover_new_hosts.checked;
+            
+            fetch('/api/subnets', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.message && result.message.includes('successfully')) {
+                    alert('Subnet added successfully!');
+                    bootstrap.Modal.getInstance(document.getElementById('addSubnetModal')).hide();
+                    form.reset();
+                    loadSubnets();
+                } else {
+                    alert('Error: ' + (result.message || result.error || 'Unknown error'));
+                }
+            })
+            .catch(error => {
+                console.error('Error adding subnet:', error);
+                alert('Error adding subnet');
+            });
+        }
+        
+        function editSubnet(id) {
+            // Implementation for editing subnet
+            alert('Edit subnet functionality to be implemented');
+        }
+        
+        function deleteSubnet(id) {
+            if (confirm('Are you sure you want to delete this subnet? This will also delete all associated IP addresses.')) {
+                fetch(`/api/subnets/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.message && result.message.includes('successfully')) {
+                        alert('Subnet deleted successfully!');
+                        loadSubnets();
+                    } else {
+                        alert('Error: ' + (result.message || result.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting subnet:', error);
+                    alert('Error deleting subnet');
+                });
+            }
+        }
+    </script>
+</body>
+</html>

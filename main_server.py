@@ -4173,6 +4173,275 @@ def api_release_ip():
         print(f"❌ Error releasing IP: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
+# ==================== SECTION-SPECIFIC ROUTES ====================
+
+@app.route('/section/<int:section_id>/dashboard')
+def section_dashboard(section_id):
+    """Section-specific dashboard"""
+    try:
+        # Get section details
+        section = get_section_by_id(section_id)
+        if not section:
+            flash('Section not found', 'error')
+            return redirect(url_for('network_sections'))
+        
+        return render_template('section_dashboard.html', section=section)
+        
+    except Exception as e:
+        print(f"❌ Error loading section dashboard: {e}")
+        flash('Error loading section dashboard', 'error')
+        return redirect(url_for('network_sections'))
+
+@app.route('/section/<int:section_id>/ip-management')
+def section_ip_management(section_id):
+    """Section-specific IP management"""
+    try:
+        section = get_section_by_id(section_id)
+        if not section:
+            flash('Section not found', 'error')
+            return redirect(url_for('network_sections'))
+        
+        return render_template('section_ip_management.html', section=section)
+        
+    except Exception as e:
+        print(f"❌ Error loading section IP management: {e}")
+        flash('Error loading section IP management', 'error')
+        return redirect(url_for('network_sections'))
+
+@app.route('/section/<int:section_id>/subnet-management')
+def section_subnet_management(section_id):
+    """Section-specific subnet management"""
+    try:
+        section = get_section_by_id(section_id)
+        if not section:
+            flash('Section not found', 'error')
+            return redirect(url_for('network_sections'))
+        
+        return render_template('section_subnet_management.html', section=section)
+        
+    except Exception as e:
+        print(f"❌ Error loading section subnet management: {e}")
+        flash('Error loading section subnet management', 'error')
+        return redirect(url_for('network_sections'))
+
+@app.route('/section/<int:section_id>/vrf-monitoring')
+def section_vrf_monitoring(section_id):
+    """Section-specific VRF monitoring"""
+    try:
+        section = get_section_by_id(section_id)
+        if not section:
+            flash('Section not found', 'error')
+            return redirect(url_for('network_sections'))
+        
+        return render_template('section_vrf_monitoring.html', section=section)
+        
+    except Exception as e:
+        print(f"❌ Error loading section VRF monitoring: {e}")
+        flash('Error loading section VRF monitoring', 'error')
+        return redirect(url_for('network_sections'))
+
+@app.route('/section/<int:section_id>/ip-auto-allocation')
+def section_ip_auto_allocation(section_id):
+    """Section-specific IP auto allocation"""
+    try:
+        section = get_section_by_id(section_id)
+        if not section:
+            flash('Section not found', 'error')
+            return redirect(url_for('network_sections'))
+        
+        return render_template('section_ip_auto_allocation.html', section=section)
+        
+    except Exception as e:
+        print(f"❌ Error loading section IP auto allocation: {e}")
+        flash('Error loading section IP auto allocation', 'error')
+        return redirect(url_for('network_sections'))
+
+@app.route('/section/<int:section_id>/csv-import')
+def section_csv_import(section_id):
+    """Section-specific CSV import"""
+    try:
+        section = get_section_by_id(section_id)
+        if not section:
+            flash('Section not found', 'error')
+            return redirect(url_for('network_sections'))
+        
+        return render_template('section_csv_import.html', section=section)
+        
+    except Exception as e:
+        print(f"❌ Error loading section CSV import: {e}")
+        flash('Error loading section CSV import', 'error')
+        return redirect(url_for('network_sections'))
+
+# ==================== SECTION-SPECIFIC API ENDPOINTS ====================
+
+@app.route('/api/section/<int:section_id>/statistics')
+def api_section_statistics(section_id):
+    """Get statistics for a specific section"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get section details
+        cursor.execute("SELECT * FROM network_sections WHERE id = %s", (section_id,))
+        section = cursor.fetchone()
+        
+        if not section:
+            return jsonify({'error': 'Section not found'}), 404
+        
+        # Get subnet statistics for this section
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as subnet_count,
+                SUM(CAST(SUBSTRING_INDEX(subnet, '/', -1) AS UNSIGNED)) as total_capacity
+            FROM subnets 
+            WHERE section_id = %s
+        """, (section_id,))
+        subnet_stats = cursor.fetchone()
+        
+        # Get IP statistics for this section
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_ips,
+                SUM(CASE WHEN status = 'Active' THEN 1 ELSE 0 END) as used_ips,
+                SUM(CASE WHEN status = 'Reserved' THEN 1 ELSE 0 END) as reserved_ips,
+                SUM(CASE WHEN status = 'Available' THEN 1 ELSE 0 END) as available_ips
+            FROM ip_addresses 
+            WHERE section_id = %s
+        """, (section_id,))
+        ip_stats = cursor.fetchone()
+        
+        cursor.close()
+        connection.close()
+        
+        # Calculate statistics
+        subnet_count = subnet_stats['subnet_count'] or 0
+        total_capacity = subnet_stats['total_capacity'] or 0
+        used_ips = ip_stats['used_ips'] or 0
+        reserved_ips = ip_stats['reserved_ips'] or 0
+        available_ips = ip_stats['available_ips'] or 0
+        
+        # Calculate estimated capacity based on /24 networks if no specific data
+        if total_capacity == 0 and subnet_count > 0:
+            total_capacity = subnet_count * 254  # Assume /24 networks
+            available_ips = total_capacity - used_ips - reserved_ips
+        
+        return jsonify({
+            'section_id': section_id,
+            'section_name': section['name'],
+            'subnets': subnet_count,
+            'used': used_ips,
+            'reserved': reserved_ips,
+            'available': max(0, available_ips),
+            'total_capacity': total_capacity,
+            'utilization': round((used_ips / total_capacity * 100) if total_capacity > 0 else 0, 2)
+        })
+        
+    except Exception as e:
+        print(f"❌ Error getting section statistics: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/section/<int:section_id>/top-subnets')
+def api_section_top_subnets(section_id):
+    """Get top subnets by utilization for a specific section"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get top subnets for this section with IP counts
+        cursor.execute("""
+            SELECT 
+                s.id,
+                s.subnet,
+                s.description,
+                COUNT(ip.id) as used_count,
+                (POWER(2, (32 - CAST(SUBSTRING_INDEX(s.subnet, '/', -1) AS UNSIGNED))) - 2) as capacity
+            FROM subnets s
+            LEFT JOIN ip_addresses ip ON s.id = ip.subnet_id AND ip.status = 'Active'
+            WHERE s.section_id = %s
+            GROUP BY s.id, s.subnet, s.description
+            ORDER BY (COUNT(ip.id) / (POWER(2, (32 - CAST(SUBSTRING_INDEX(s.subnet, '/', -1) AS UNSIGNED))) - 2)) DESC
+            LIMIT 10
+        """, (section_id,))
+        
+        subnets = cursor.fetchall()
+        
+        # Calculate utilization percentage
+        for subnet in subnets:
+            if subnet['capacity'] > 0:
+                subnet['utilization'] = round((subnet['used_count'] / subnet['capacity']) * 100, 1)
+            else:
+                subnet['utilization'] = 0
+            subnet['used'] = subnet['used_count']
+            
+        cursor.close()
+        connection.close()
+        
+        return jsonify(subnets)
+        
+    except Exception as e:
+        print(f"❌ Error getting section top subnets: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/section/<int:section_id>/subnets')
+def api_section_subnets(section_id):
+    """Get subnets for a specific section"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        cursor = connection.cursor(dictionary=True)
+        
+        # Get subnets for this section
+        cursor.execute("""
+            SELECT 
+                s.*,
+                COUNT(ip.id) as used_ips,
+                (POWER(2, (32 - CAST(SUBSTRING_INDEX(s.subnet, '/', -1) AS UNSIGNED))) - 2) as capacity
+            FROM subnets s
+            LEFT JOIN ip_addresses ip ON s.id = ip.subnet_id AND ip.status = 'Active'
+            WHERE s.section_id = %s
+            GROUP BY s.id
+            ORDER BY s.subnet
+        """, (section_id,))
+        
+        subnets = cursor.fetchall()
+        
+        cursor.close()
+        connection.close()
+        
+        return jsonify(subnets)
+        
+    except Exception as e:
+        print(f"❌ Error getting section subnets: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def get_section_by_id(section_id):
+    """Helper function to get section by ID"""
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return None
+            
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM network_sections WHERE id = %s", (section_id,))
+        section = cursor.fetchone()
+        
+        cursor.close()
+        connection.close()
+        
+        return section
+        
+    except Exception as e:
+        print(f"❌ Error getting section by ID: {e}")
+        return None
+
 # Existing routes continue...
 if __name__ == '__main__':
     print("\n" + "="*60)

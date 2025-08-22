@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ section.name }} Dashboard - IPAM System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .sidebar {
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow-y: auto;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            border-radius: 8px;
+            margin: 2px 8px;
+            transition: all 0.3s ease;
+        }
+        .sidebar .nav-link:hover,
+        .sidebar .nav-link.active {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(5px);
+        }
+        .content-area {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border-left: 4px solid;
+            transition: transform 0.2s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+        }
+        .stat-card.available { border-left-color: #28a745; }
+        .stat-card.used { border-left-color: #dc3545; }
+        .stat-card.reserved { border-left-color: #ffc107; }
+        .stat-card.subnets { border-left-color: #6f42c1; }
+        
+        .section-header {
+            background: linear-gradient(135deg, {{ section.color }}22, {{ section.color }}44);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border-left: 6px solid {{ section.color }};
+        }
+        
+        .quick-action-btn {
+            border-radius: 10px;
+            padding: 0.75rem 1.5rem;
+            margin: 0.25rem;
+            transition: all 0.3s ease;
+        }
+        .quick-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .breadcrumb {
+            background: white;
+            border-radius: 10px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 sidebar">
+                <!-- Section Header -->
+                <div class="p-3 border-bottom">
+                    <div class="d-flex align-items-center">
+                        <div class="section-color-indicator" style="background: {{ section.color }}; width: 15px; height: 15px; border-radius: 50%; margin-right: 10px;"></div>
+                        <h5 class="mb-0">{{ section.name }}</h5>
+                    </div>
+                    <small class="text-light opacity-75">{{ section.description }}</small>
+                </div>
+
+                <!-- Navigation Menu -->
+                <nav class="nav flex-column p-3">
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3 mt-2">Main Menu</h6>
+                    
+                    <a class="nav-link active" href="/section/{{ section.id }}/dashboard">
+                        <i class="fas fa-tachometer-alt me-2"></i>
+                        Dashboard
+                        <span class="badge bg-light text-dark ms-auto">Overview</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-management">
+                        <i class="fas fa-network-wired me-2"></i>
+                        IP Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.ip_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/subnet-management">
+                        <i class="fas fa-sitemap me-2"></i>
+                        Subnet Management
+                        <span class="badge bg-light text-dark ms-auto">{{ section.subnet_count or 0 }}</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/vrf-monitoring">
+                        <i class="fas fa-project-diagram me-2"></i>
+                        VRF Monitoring
+                        <span class="badge bg-light text-dark ms-auto">Monitor</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <h6 class="nav-header text-uppercase text-light opacity-75 mb-3">Advanced Tools</h6>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/ip-auto-allocation">
+                        <i class="fas fa-magic me-2"></i>
+                        IP Auto Allocation
+                        <span class="badge bg-success ms-auto">Smart</span>
+                    </a>
+                    
+                    <a class="nav-link" href="/section/{{ section.id }}/csv-import">
+                        <i class="fas fa-file-csv me-2"></i>
+                        CSV Import
+                        <span class="badge bg-info ms-auto">Bulk</span>
+                    </a>
+
+                    <hr class="my-3 opacity-25">
+                    
+                    <a class="nav-link" href="/network-sections">
+                        <i class="fas fa-arrow-left me-2"></i>
+                        Back to Sections
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 content-area">
+                <!-- Breadcrumb -->
+                <div class="p-3">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="/network-sections">Network Sections</a></li>
+                            <li class="breadcrumb-item active">{{ section.name }}</li>
+                            <li class="breadcrumb-item active">Dashboard</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Section Header -->
+                <div class="section-header">
+                    <div class="row align-items-center">
+                        <div class="col">
+                            <h2 class="mb-2">
+                                <i class="fas fa-tachometer-alt me-3"></i>
+                                {{ section.name }} Dashboard
+                            </h2>
+                            <p class="mb-0 text-muted">{{ section.description }}</p>
+                            <small class="text-muted">Real-time network statistics and monitoring for this section</small>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-primary" onclick="refreshData()">
+                                <i class="fas fa-sync-alt me-2"></i>Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Statistics Cards -->
+                <div class="row mb-4">
+                    <div class="col-lg-3 col-md-6">
+                        <div class="stat-card available">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h3 class="mb-0" id="availableIPs">-</h3>
+                                    <p class="text-muted mb-0">Available IPs</p>
+                                    <small class="text-success">Ready for allocation</small>
+                                </div>
+                                <div class="text-success">
+                                    <i class="fas fa-check-circle fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <div class="stat-card used">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h3 class="mb-0" id="usedIPs">-</h3>
+                                    <p class="text-muted mb-0">Used IPs</p>
+                                    <small class="text-danger">Currently in use</small>
+                                </div>
+                                <div class="text-danger">
+                                    <i class="fas fa-desktop fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <div class="stat-card reserved">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h3 class="mb-0" id="reservedIPs">-</h3>
+                                    <p class="text-muted mb-0">Reserved IPs</p>
+                                    <small class="text-warning">Pending allocation</small>
+                                </div>
+                                <div class="text-warning">
+                                    <i class="fas fa-bookmark fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <div class="stat-card subnets">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h3 class="mb-0" id="totalSubnets">-</h3>
+                                    <p class="text-muted mb-0">Total Subnets</p>
+                                    <small class="text-primary">Networks managed</small>
+                                </div>
+                                <div class="text-primary">
+                                    <i class="fas fa-sitemap fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts and Analysis -->
+                <div class="row">
+                    <div class="col-lg-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-chart-pie me-2"></i>
+                                    IP Utilization
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <canvas id="utilizationChart" width="400" height="200"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-lg-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-network-wired me-2"></i>
+                                    Top Subnets by Usage
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div id="topSubnets">
+                                    <div class="text-center py-4">
+                                        <div class="spinner-border text-primary" role="status">
+                                            <span class="visually-hidden">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-bolt me-2"></i>
+                                    Quick Actions
+                                </h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <a href="/section/{{ section.id }}/ip-management" class="btn btn-outline-primary quick-action-btn w-100">
+                                            <i class="fas fa-plus me-2"></i>
+                                            Add IP Address
+                                        </a>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <a href="/section/{{ section.id }}/subnet-management" class="btn btn-outline-success quick-action-btn w-100">
+                                            <i class="fas fa-sitemap me-2"></i>
+                                            Create Subnet
+                                        </a>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <a href="/section/{{ section.id }}/ip-auto-allocation" class="btn btn-outline-info quick-action-btn w-100">
+                                            <i class="fas fa-magic me-2"></i>
+                                            Auto Allocate
+                                        </a>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <a href="/section/{{ section.id }}/csv-import" class="btn btn-outline-warning quick-action-btn w-100">
+                                            <i class="fas fa-file-import me-2"></i>
+                                            Bulk Import
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let utilizationChart;
+        
+        // Load section data on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadSectionData();
+            initializeCharts();
+        });
+        
+        function loadSectionData() {
+            fetch(`/api/section/{{ section.id }}/statistics`)
+                .then(response => response.json())
+                .then(data => {
+                    updateStatistics(data);
+                    updateCharts(data);
+                    loadTopSubnets();
+                })
+                .catch(error => {
+                    console.error('Error loading section data:', error);
+                });
+        }
+        
+        function updateStatistics(data) {
+            document.getElementById('availableIPs').textContent = 
+                new Intl.NumberFormat().format(data.available || 0);
+            document.getElementById('usedIPs').textContent = 
+                new Intl.NumberFormat().format(data.used || 0);
+            document.getElementById('reservedIPs').textContent = 
+                new Intl.NumberFormat().format(data.reserved || 0);
+            document.getElementById('totalSubnets').textContent = 
+                new Intl.NumberFormat().format(data.subnets || 0);
+        }
+        
+        function initializeCharts() {
+            const ctx = document.getElementById('utilizationChart').getContext('2d');
+            utilizationChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Available', 'Used', 'Reserved'],
+                    datasets: [{
+                        data: [0, 0, 0],
+                        backgroundColor: ['#28a745', '#dc3545', '#ffc107'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        function updateCharts(data) {
+            if (utilizationChart) {
+                utilizationChart.data.datasets[0].data = [
+                    data.available || 0,
+                    data.used || 0,
+                    data.reserved || 0
+                ];
+                utilizationChart.update();
+            }
+        }
+        
+        function loadTopSubnets() {
+            fetch(`/api/section/{{ section.id }}/top-subnets`)
+                .then(response => response.json())
+                .then(data => {
+                    displayTopSubnets(data);
+                })
+                .catch(error => {
+                    console.error('Error loading top subnets:', error);
+                    document.getElementById('topSubnets').innerHTML = 
+                        '<div class="text-center text-muted">Failed to load subnet data</div>';
+                });
+        }
+        
+        function displayTopSubnets(subnets) {
+            const container = document.getElementById('topSubnets');
+            if (!subnets || subnets.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">No subnets found</div>';
+                return;
+            }
+            
+            const html = subnets.map(subnet => `
+                <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                    <div>
+                        <strong>${subnet.subnet}</strong>
+                        <br>
+                        <small class="text-muted">${subnet.description || 'No description'}</small>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-${subnet.utilization > 80 ? 'danger' : subnet.utilization > 60 ? 'warning' : 'success'}">
+                            ${subnet.utilization}%
+                        </span>
+                        <br>
+                        <small class="text-muted">${subnet.used}/${subnet.capacity} IPs</small>
+                    </div>
+                </div>
+            `).join('');
+            
+            container.innerHTML = html;
+        }
+        
+        function refreshData() {
+            loadSectionData();
+        }
+    </script>
+</body>
+</html>
